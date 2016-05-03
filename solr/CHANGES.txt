@@ -9,7 +9,9 @@ caching, replication, and a web administration interface.
 See http://lucene.apache.org/solr for more information.
 
 ======================= 5.5.2 =======================
-(No Changes)
+
+* SOLR-5750: Add /admin/collections?action=BACKUP and RESTORE assuming access to a shared file system.
+  (Varun Thacker, David Smiley)
 
 ======================= 5.5.1 =======================
 

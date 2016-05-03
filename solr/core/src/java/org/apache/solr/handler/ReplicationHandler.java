@@ -52,6 +52,7 @@ import java.util.zip.Adler32;
 import java.util.zip.Checksum;
 import java.util.zip.DeflaterOutputStream;
 
+import com.google.common.base.Function;
 import org.apache.commons.io.IOUtils;
 import org.apache.lucene.codecs.CodecUtil;
 import org.apache.lucene.index.DirectoryReader;
@@ -87,6 +88,7 @@ import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.response.SolrQueryResponse;
 import org.apache.solr.search.SolrIndexSearcher;
 import org.apache.solr.update.SolrIndexWriter;
+import org.apache.solr.update.VersionInfo;
 import org.apache.solr.util.DefaultSolrThreadFactory;
 import org.apache.solr.util.NumberUtils;
 import org.apache.solr.util.PropertiesInputStream;
@@ -128,8 +130,8 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
       version = v;
     }
     /**
-     * builds a CommitVersionInfo data for the specified IndexCommit.  
-     * Will never be null, ut version and generation may be zero if 
+     * builds a CommitVersionInfo data for the specified IndexCommit.
+     * Will never be null, ut version and generation may be zero if
      * there are problems extracting them from the commit data
      */
     public static CommitVersionInfo build(IndexCommit commit) {
@@ -191,7 +193,7 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
 
   volatile IndexCommit indexCommitPoint;
 
-  volatile NamedList<Object> snapShootDetails;
+  volatile NamedList<?> snapShootDetails;
 
   private AtomicBoolean replicationEnabled = new AtomicBoolean(true);
 
@@ -498,7 +500,13 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
       // small race here before the commit point is saved
       SnapShooter snapShooter = new SnapShooter(core, params.get("location"), params.get(NAME));
       snapShooter.validateCreateSnapshot();
-      snapShooter.createSnapAsync(indexCommit, numberToKeep, this);
+      snapShooter.createSnapAsync(indexCommit, numberToKeep, new Function<NamedList, Void>() {
+        @Override
+        public Void apply(NamedList namedList) {
+          snapShootDetails = namedList;
+          return null;
+        }
+      });
 
     } catch (Exception e) {
       LOG.warn("Exception during creating a snapshot", e);
@@ -573,12 +581,12 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
           result.add(fileMeta);
         }
       }
-      
+
       // add the segments_N file
 
       // we use the oldest version seen to determine
       // how we treat the segments_N file - conservative, easy
-      
+
       Map<String,Object> fileMeta = new HashMap<>();
       fileMeta.put(NAME, infos.getSegmentsFileName());
       fileMeta.put(SIZE, dir.fileLength(infos.getSegmentsFileName()));
@@ -1271,14 +1279,20 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
           ***/
         }
         if (snapshoot) {
-          try {            
+          try {
             int numberToKeep = numberBackupsToKeep;
             if (numberToKeep < 1) {
               numberToKeep = Integer.MAX_VALUE;
-            }            
+            }
             SnapShooter snapShooter = new SnapShooter(core, null, null);
             snapShooter.validateCreateSnapshot();
-            snapShooter.createSnapAsync(currentCommitPoint, numberToKeep, ReplicationHandler.this);
+            snapShooter.createSnapAsync(currentCommitPoint, numberToKeep,  new Function<NamedList, Void>() {
+              @Override
+              public Void apply(NamedList namedList) {
+                snapShootDetails = namedList;
+                return null;
+              }
+            });
           } catch (Exception e) {
             LOG.error("Exception while snapshooting", e);
           }
@@ -1394,7 +1408,7 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
         in = dir.openInput(fileName, IOContext.READONCE);
         // if offset is mentioned move the pointer to that point
         if (offset != -1) in.seek(offset);
-        
+
         long filelen = dir.fileLength(fileName);
         long maxBytesBeforePause = 0;
 
@@ -1623,15 +1637,15 @@ public class ReplicationHandler extends RequestHandlerBase implements SolrCoreAw
   public static final String OK_STATUS = "OK";
 
   public static final String NEXT_EXECUTION_AT = "nextExecutionAt";
-  
+
   public static final String NUMBER_BACKUPS_TO_KEEP_REQUEST_PARAM = "numberToKeep";
-  
+
   public static final String NUMBER_BACKUPS_TO_KEEP_INIT_PARAM = "maxNumberOfBackups";
 
-  /** 
-   * Boolean param for tests that can be specified when using 
-   * {@link #CMD_FETCH_INDEX} to force the current request to block until 
-   * the fetch is complete.  <b>NOTE:</b> This param is not advised for 
+  /**
+   * Boolean param for tests that can be specified when using
+   * {@link #CMD_FETCH_INDEX} to force the current request to block until
+   * the fetch is complete.  <b>NOTE:</b> This param is not advised for
    * non-test code, since the the duration of the fetch for non-trivial
    * indexes will likeley cause the request to time out.
    *

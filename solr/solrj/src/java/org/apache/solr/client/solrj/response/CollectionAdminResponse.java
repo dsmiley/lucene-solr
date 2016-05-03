@@ -75,4 +75,10 @@ public class CollectionAdminResponse extends SolrResponseBase
 
     return res;
   }
+
+  // DWS: nocommit hack; just for SOLR-5750 backport
+  public RequestStatusState getRequestStatus() {
+    NamedList innerResponse = (NamedList) getResponse().get("status");
+    return RequestStatusState.fromKey((String) innerResponse.get("state"));
+  }
 }
