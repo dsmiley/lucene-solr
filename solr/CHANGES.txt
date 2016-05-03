@@ -19,6 +19,9 @@ New Features
 
 * SOLR-8938: Add optional --excluderegex argument to ZkCLI. (Christine Poerschke)
 
+* SOLR-5750: Add /admin/collections?action=BACKUP and RESTORE assuming access to a shared file system.
+  (Varun Thacker, David Smiley)
+
 Other Changes
 ----------------------
 

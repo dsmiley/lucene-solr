@@ -151,7 +151,7 @@ public class IndexFetcher {
   private volatile Map<String, Object> currentFile;
 
   private volatile DirectoryFileFetcher dirFileFetcher;
-  
+
   private volatile LocalFsFileFetcher localFileFetcher;
 
   private volatile ExecutorService fsyncService;
@@ -186,7 +186,7 @@ public class IndexFetcher {
       LOG.warn("'masterUrl' must be specified without the "+ReplicationHandler.PATH+" suffix");
     }
     this.masterUrl = masterUrl;
-    
+
     this.replicationHandler = handler;
     String compress = (String) initArgs.get(COMPRESSION);
     useInternalCompression = INTERNAL.equals(compress);
@@ -213,7 +213,7 @@ public class IndexFetcher {
     try (HttpSolrClient client = new HttpSolrClient(masterUrl, myHttpClient)) {
       client.setSoTimeout(60000);
       client.setConnectionTimeout(15000);
-      
+
       return client.request(req);
     } catch (SolrServerException e) {
       throw new SolrException(ErrorCode.SERVER_ERROR, e.getMessage(), e);
@@ -257,18 +257,18 @@ public class IndexFetcher {
   boolean fetchLatestIndex(boolean forceReplication) throws IOException, InterruptedException {
     return fetchLatestIndex(forceReplication, false);
   }
-  
+
   /**
    * This command downloads all the necessary files from master to install a index commit point. Only changed files are
    * downloaded. It also downloads the conf files (if they are modified).
    *
-   * @param forceReplication force a replication in all cases 
+   * @param forceReplication force a replication in all cases
    * @param forceCoreReload force a core reload in all cases
    * @return true on success, false if slave is already in sync
    * @throws IOException if an exception occurs
    */
   boolean fetchLatestIndex(boolean forceReplication, boolean forceCoreReload) throws IOException, InterruptedException {
-    
+
     boolean cleanupDone = false;
     boolean successfulInstall = false;
     markReplicationStart();
@@ -277,14 +277,14 @@ public class IndexFetcher {
     Directory indexDir = null;
     String indexDirPath;
     boolean deleteTmpIdxDir = true;
-    
+
     if (!solrCore.getSolrCoreState().getLastReplicateIndexSuccess()) {
       // if the last replication was not a success, we force a full replication
       // when we are a bit more confident we may want to try a partial replication
       // if the error is connection related or something, but we have to be careful
       forceReplication = true;
     }
-    
+
     try {
       //get the current 'replicateable' index version in the master
       NamedList response;
@@ -328,12 +328,12 @@ public class IndexFetcher {
           SolrQueryRequest req = new LocalSolrQueryRequest(solrCore, new ModifiableSolrParams());
           solrCore.getUpdateHandler().commit(new CommitUpdateCommand(req, false));
         }
-        
+
         //there is nothing to be replicated
         successfulInstall = true;
         return true;
       }
-      
+
       // TODO: Should we be comparing timestamps (across machines) here?
       if (!forceReplication && IndexDeletionPolicyWrapper.getCommitTimestamp(commit) == latestVersion) {
         //master and slave are already in sync just return
@@ -366,7 +366,7 @@ public class IndexFetcher {
       tmpIndex = solrCore.getDataDir() + tmpIdxDirName;
 
       tmpIndexDir = solrCore.getDirectoryFactory().get(tmpIndex, DirContext.DEFAULT, solrCore.getSolrConfig().indexConfig.lockType);
-      
+
       // cindex dir...
       indexDirPath = solrCore.getIndexDir();
       indexDir = solrCore.getDirectoryFactory().get(indexDirPath, DirContext.DEFAULT, solrCore.getSolrConfig().indexConfig.lockType);
@@ -381,7 +381,7 @@ public class IndexFetcher {
         if (!isFullCopyNeeded && isIndexStale(indexDir, oldestVersion)) {
           isFullCopyNeeded = true;
         }
-        
+
         if (!isFullCopyNeeded) {
           // a searcher might be using some flushed but not committed segments
           // because of soft commits (which open a searcher on IW's data)
@@ -419,11 +419,11 @@ public class IndexFetcher {
           solrCore.getUpdateHandler().getSolrCoreState().closeIndexWriter(solrCore, true);
         }
         boolean reloadCore = false;
-        
+
         try {
           LOG.info("Starting download (fullCopy={}) to {}", isFullCopyNeeded, tmpIndexDir);
           successfulInstall = false;
-          
+
           final long bytesDownloaded = downloadIndexFiles(isFullCopyNeeded, indexDir, oldestVersion, tmpIndexDir, latestGeneration);
           final long timeTakenSeconds = getReplicationTimeElapsed();
           final Long bytesDownloadedPerSecond = (timeTakenSeconds != 0 ? new Long(bytesDownloaded/timeTakenSeconds) : null);
@@ -450,7 +450,7 @@ public class IndexFetcher {
                   solrCore.getDirectoryFactory().remove(indexDir);
                 }
               }
-              
+
               LOG.info("Configuration files are modified, core will be reloaded");
               logReplicationTimeAndConfFiles(modifiedConfFiles,
                   successfulInstall);// write to a file time of replication and
@@ -474,7 +474,7 @@ public class IndexFetcher {
             solrCore.getUpdateHandler().getSolrCoreState().openIndexWriter(solrCore);
           }
         }
-        
+
         // we must reload the core after we open the IW back up
        if (successfulInstall && (reloadCore || forceCoreReload)) {
           LOG.info("Reloading SolrCore {}", solrCore.getName());
@@ -494,10 +494,10 @@ public class IndexFetcher {
           if (isFullCopyNeeded) {
             solrCore.getUpdateHandler().newIndexWriter(isFullCopyNeeded);
           }
-          
+
           openNewSearcherAndUpdateCommitPoint();
         }
-        
+
         if (!isFullCopyNeeded && !forceReplication && !successfulInstall) {
           cleanup(solrCore, tmpIndexDir, indexDir, deleteTmpIdxDir, successfulInstall);
           cleanupDone = true;
@@ -507,7 +507,7 @@ public class IndexFetcher {
               reloadCore);
           successfulInstall = fetchLatestIndex(true, reloadCore);
         }
-        
+
         markReplicationStop();
         return successfulInstall;
       } catch (ReplicationHandlerException e) {
@@ -615,7 +615,7 @@ public class IndexFetcher {
     Directory dir = null;
     try {
       dir = solrCore.getDirectoryFactory().get(solrCore.getDataDir(), DirContext.META_DATA, solrCore.getSolrConfig().indexConfig.lockType);
-      
+
       int indexCount = 1, confFilesCount = 1;
       if (props.containsKey(TIMES_INDEX_REPLICATED)) {
         indexCount = Integer.valueOf(props.getProperty(TIMES_INDEX_REPLICATED)) + 1;
@@ -706,7 +706,7 @@ public class IndexFetcher {
   private void openNewSearcherAndUpdateCommitPoint() throws IOException {
     SolrQueryRequest req = new LocalSolrQueryRequest(solrCore,
         new ModifiableSolrParams());
-    
+
     RefCounted<SolrIndexSearcher> searcher = null;
     IndexCommit commitPoint;
     try {
@@ -729,7 +729,7 @@ public class IndexFetcher {
 
     // update the commit point in replication handler
     replicationHandler.indexCommitPoint = commitPoint;
-    
+
   }
 
   private void reloadCore() {
@@ -816,8 +816,8 @@ public class IndexFetcher {
     }
     return bytesDownloaded;
   }
-
-  private boolean filesToAlwaysDownloadIfNoChecksums(String filename,
+  
+  static boolean filesToAlwaysDownloadIfNoChecksums(String filename,
       long size, CompareResult compareResult) {
     // without checksums to compare, we always download .si, .liv, segments_N,
     // and any very small files
@@ -857,10 +857,10 @@ public class IndexFetcher {
             LOG.warn("Could not retrieve checksum from file.", e);
           }
         }
-        
+
         if (!compareResult.checkSummed) {
           // we don't have checksums to compare
-          
+
           if (indexFileLen == backupIndexFileLen) {
             compareResult.equal = true;
             return compareResult;
@@ -871,9 +871,9 @@ public class IndexFetcher {
             return compareResult;
           }
         }
-        
+
         // we have checksums to compare
-        
+
         if (indexFileLen == backupIndexFileLen && indexFileChecksum == backupIndexFileChecksum) {
           compareResult.equal = true;
           return compareResult;
@@ -906,7 +906,7 @@ public class IndexFetcher {
     } catch (NoSuchFileException | FileNotFoundException e) {
       return false;
     }
-  }  
+  }
 
   /**
    * All the files which are common between master and slave must have same size and same checksum else we assume
@@ -1000,7 +1000,7 @@ public class IndexFetcher {
   }
 
   /**
-   * Make file list 
+   * Make file list
    */
   private List<File> makeTmpConfDirFileList(File dir, List<File> fileList) {
     File[] files = dir.listFiles();
@@ -1013,7 +1013,7 @@ public class IndexFetcher {
     }
     return fileList;
   }
-  
+
   /**
    * The conf files are copied to the tmp dir to the conf dir. A backup of the old file is maintained
    */
@@ -1145,10 +1145,10 @@ public class IndexFetcher {
     }
     return nameVsFile.isEmpty() ? Collections.EMPTY_LIST : nameVsFile.values();
   }
-  
-  /** 
+
+  /**
    * This simulates File.delete exception-wise, since this class has some strange behavior with it.
-   * The only difference is it returns null on success, throws SecurityException on SecurityException, 
+   * The only difference is it returns null on success, throws SecurityException on SecurityException,
    * otherwise returns Throwable preventing deletion (instead of false), for additional information.
    */
   static Throwable delete(File file) {
@@ -1161,7 +1161,7 @@ public class IndexFetcher {
       return other;
     }
   }
-  
+
   static boolean delTree(File dir) {
     try {
       org.apache.lucene.util.IOUtils.rm(dir.toPath());

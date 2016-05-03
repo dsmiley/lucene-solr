@@ -21,10 +21,14 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Properties;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrRequest;
+import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.CollectionAdminResponse;
+import org.apache.solr.client.solrj.response.RequestStatusState;
 import org.apache.solr.client.solrj.util.SolrIdentifierValidator;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.cloud.DocCollection;
@@ -37,6 +41,7 @@ import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.common.params.ShardParams;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.common.util.ContentStream;
+import org.apache.solr.common.util.NamedList;
 
 /**
  * This class is experimental and subject to change.
@@ -159,6 +164,51 @@ public abstract class CollectionAdminRequest <Q extends CollectionAdminRequest<Q
         params.set(CommonAdminParams.ASYNC, asyncId);
       }
       return params;
+    }
+
+    private static String generateAsyncId() {
+      return UUID.randomUUID().toString();
+    }
+
+    /**
+     * Send this request to a Solr server, and wait (up to a timeout) for the request to
+     * complete or fail
+     * @param client a Solr client
+     * @param timeoutSeconds the maximum time to wait
+     * @return the status of the request on completion or timeout
+     */
+    public RequestStatusState processAndWait(SolrClient client, long timeoutSeconds)
+        throws SolrServerException, InterruptedException, IOException {
+      return processAndWait(generateAsyncId(), client, timeoutSeconds);
+    }
+
+    /**
+     * Send this request to a Solr server, and wait (up to a timeout) for the request to
+     * complete or fail
+     * @param asyncId an id for the request
+     * @param client a Solr client
+     * @param timeoutSeconds the maximum time to wait
+     * @return the status of the request on completion or timeout
+     */
+    public RequestStatusState processAndWait(String asyncId, SolrClient client, long timeoutSeconds)
+        throws IOException, SolrServerException, InterruptedException {
+      processAsync(asyncId, client);
+      return requestStatus(asyncId).waitFor(client, timeoutSeconds);
+    }
+
+    /**
+     * Process this request asynchronously, using a specified request id
+     * @param asyncId the request id
+     * @param client a Solr client
+     * @return the request id
+     */
+    public String processAsync(String asyncId, SolrClient client) throws IOException, SolrServerException {
+      this.asyncId = asyncId;
+      NamedList<Object> resp = client.request(this);
+      if (resp.get("error") != null) {
+        throw new SolrServerException((String)resp.get("error"));
+      }
+      return (String) resp.get("requestid");
     }
   }
 
@@ -418,6 +468,139 @@ public abstract class CollectionAdminRequest <Q extends CollectionAdminRequest<Q
     }
   }
 
+  public static Backup backupCollection(String collection, String backupName) {
+    return new Backup(collection, backupName);
+  }
+
+  // BACKUP request
+  public static class Backup extends CollectionSpecificAsyncAdminRequest {
+    protected final String name;
+    protected String location;
+
+    public Backup(String collection, String name) {
+      this.action = CollectionAction.BACKUP;
+      this.collection = collection;
+      this.name = name;
+    }
+
+    @Override
+    protected Backup getThis() {
+      return this;
+    }
+
+    @Override
+    @Deprecated
+    public Backup setCollectionName(String collection) {
+      this.collection = collection;
+      return this;
+    }
+
+    public String getLocation() {
+      return location;
+    }
+
+    public Backup setLocation(String location) {
+      this.location = location;
+      return this;
+    }
+
+    @Override
+    public SolrParams getParams() {
+      ModifiableSolrParams params = (ModifiableSolrParams) super.getParams();
+      params.set(CoreAdminParams.COLLECTION, collection);
+      params.set(CoreAdminParams.NAME, name);
+      params.set("location", location); //note: optional
+      return params;
+    }
+
+  }
+
+  public static Restore restoreCollection(String collection, String backupName) {
+    return new Restore(collection, backupName);
+  }
+
+  // RESTORE request
+  public static class Restore extends CollectionSpecificAsyncAdminRequest {
+    protected final String backupName;
+    protected String location;
+
+    // in common with collection creation:
+    protected String configName;
+    protected Integer maxShardsPerNode;
+    protected Integer replicationFactor;
+    protected Boolean autoAddReplicas;
+    protected Properties properties;
+
+    public Restore(String collection, String backupName) {
+      this.action = CollectionAction.RESTORE;
+      this.collection = collection;
+      this.backupName = backupName;
+    }
+
+    @Override
+    protected Restore getThis() {
+      return this;
+    }
+
+    @Override
+    public Restore setCollectionName(String collection) {
+      this.collection = collection;
+      return this;
+    }
+
+    public String getLocation() {
+      return location;
+    }
+
+    public Restore setLocation(String location) {
+      this.location = location;
+      return this;
+    }
+
+    // Collection creation params in common:
+    public Restore setConfigName(String config) { this.configName = config; return this; }
+    public String getConfigName()  { return configName; }
+
+    public Integer getMaxShardsPerNode() { return maxShardsPerNode; }
+    public Restore setMaxShardsPerNode(int maxShardsPerNode) { this.maxShardsPerNode = maxShardsPerNode; return this; }
+
+    public Integer getReplicationFactor() { return replicationFactor; }
+    public Restore setReplicationFactor(Integer repl) { this.replicationFactor = repl; return this; }
+
+    public Boolean getAutoAddReplicas() { return autoAddReplicas; }
+    public Restore setAutoAddReplicas(boolean autoAddReplicas) { this.autoAddReplicas = autoAddReplicas; return this; }
+
+    public Properties getProperties() {
+      return properties;
+    }
+    public Restore setProperties(Properties properties) { this.properties = properties; return this;}
+
+    // TODO support createNodeSet, rule, snitch
+
+    @Override
+    public SolrParams getParams() {
+      ModifiableSolrParams params = (ModifiableSolrParams) super.getParams();
+      params.set(CoreAdminParams.COLLECTION, collection);
+      params.set(CoreAdminParams.NAME, backupName);
+      params.set("location", location); //note: optional
+      params.set("collection.configName", configName); //note: optional
+      if (maxShardsPerNode != null) {
+        params.set( "maxShardsPerNode", maxShardsPerNode);
+      }
+      if (replicationFactor != null) {
+        params.set("replicationFactor", replicationFactor);
+      }
+      if (autoAddReplicas != null) {
+        params.set(ZkStateReader.AUTO_ADD_REPLICAS, autoAddReplicas);
+      }
+      if (properties != null) {
+        addProperties(params, properties);
+      }
+      return params;
+    }
+
+  }
+
   // CREATESHARD request
   public static class CreateShard extends CollectionShardAsyncAdminRequest<CreateShard> {
     protected String nodeSet;
@@ -444,7 +627,7 @@ public abstract class CollectionAdminRequest <Q extends CollectionAdminRequest<Q
     public CreateShard() {
       action = CollectionAction.CREATESHARD;
     }
-    
+
     /**
      * Provide the name of the shard to be created.
      * 
@@ -557,6 +740,21 @@ public abstract class CollectionAdminRequest <Q extends CollectionAdminRequest<Q
     }
   }
 
+  /**
+   * Returns a SolrRequest for checking the status of an asynchronous request
+   *
+   * @see CollectionAdminRequest.AsyncCollectionAdminRequest
+   */
+  public static RequestStatus requestStatus(String requestId) {
+    RequestStatus requestStatus = new RequestStatus();
+    requestStatus.setRequestId(requestId);
+    return requestStatus;
+  }
+
+  public static void waitForAsyncRequest(String requestId, SolrClient client, long timeout) throws SolrServerException, InterruptedException, IOException {
+    requestStatus(requestId).waitFor(client, timeout);
+  }
+
   // REQUESTSTATUS request
   public static class RequestStatus extends CollectionAdminRequest<RequestStatus> {
     protected  String requestId = null;
@@ -585,6 +783,28 @@ public abstract class CollectionAdminRequest <Q extends CollectionAdminRequest<Q
     protected RequestStatus getThis() {
       return this;
     }
+
+    /**
+     * Wait until the asynchronous request is either completed or failed, up to a timeout
+     * @param client a SolrClient
+     * @param timeoutSeconds the maximum time to wait in seconds
+     * @return the last seen state of the request
+     */
+    public RequestStatusState waitFor(SolrClient client, long timeoutSeconds)
+        throws IOException, SolrServerException, InterruptedException {
+      long finishTime = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
+      RequestStatusState state = RequestStatusState.NOT_FOUND;
+      while (System.nanoTime() < finishTime) {
+        state = this.process(client).getRequestStatus();
+        if (state == RequestStatusState.COMPLETED || state == RequestStatusState.FAILED) {
+          new DeleteStatus().setRequestId(requestId).process(client);
+          return state;
+        }
+        TimeUnit.SECONDS.sleep(1);
+      }
+      return state;
+    }
+
   }
 
   // DELETESTATUS request
