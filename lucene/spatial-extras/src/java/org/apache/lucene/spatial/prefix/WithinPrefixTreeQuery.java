@@ -198,9 +198,10 @@ public class WithinPrefixTreeQuery extends AbstractVisitingPrefixTreeQuery {
        * detailLevel all intersect the queryShape.
        */
       private boolean allCellsIntersectQuery(Cell cell) {
-        SpatialRelation relate = cell.getShape().relate(queryShape);
+        SpatialRelation relate = queryShape.relate(cell.getShape());
         if (cell.getLevel() == detailLevel)
           return relate.intersects();
+        relate = relate.transpose();
         if (relate == SpatialRelation.WITHIN)
           return true;
         if (relate == SpatialRelation.DISJOINT)

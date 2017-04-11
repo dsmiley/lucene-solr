@@ -32,13 +32,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import org.locationtech.spatial4j.context.SpatialContext;
-import org.locationtech.spatial4j.shape.Shape;
 import org.apache.lucene.spatial.prefix.HeatmapFacetCounter;
 import org.apache.lucene.spatial.prefix.PrefixTreeStrategy;
 import org.apache.lucene.spatial.query.SpatialArgs;
 import org.apache.lucene.spatial.query.SpatialOperation;
 import org.apache.lucene.util.Bits;
+import org.apache.lucene.util.FixedBitSet;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.params.FacetParams;
@@ -47,6 +46,7 @@ import org.apache.solr.common.util.NamedList;
 import org.apache.solr.common.util.SimpleOrderedMap;
 import org.apache.solr.schema.AbstractSpatialPrefixTreeFieldType;
 import org.apache.solr.schema.FieldType;
+import org.apache.solr.schema.HeatmapSpatialField;
 import org.apache.solr.schema.RptWithGeometrySpatialField;
 import org.apache.solr.schema.SchemaField;
 import org.apache.solr.schema.SpatialRecursivePrefixTreeFieldType;
@@ -55,6 +55,8 @@ import org.apache.solr.search.DocSet;
 import org.apache.solr.search.QueryParsing;
 import org.apache.solr.util.DistanceUnits;
 import org.apache.solr.util.SpatialUtils;
+import org.locationtech.spatial4j.context.SpatialContext;
+import org.locationtech.spatial4j.shape.Shape;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -81,18 +83,22 @@ public class SpatialHeatmapFacets {
 
     final PrefixTreeStrategy strategy;
     final DistanceUnits distanceUnits;
+    final FixedBitSet usedLevelBits;
     // note: the two instanceof conditions is not ideal, versus one. If we start needing to add more then refactor.
     if ((type instanceof AbstractSpatialPrefixTreeFieldType)) {
       AbstractSpatialPrefixTreeFieldType rptType = (AbstractSpatialPrefixTreeFieldType) type;
       strategy = (PrefixTreeStrategy) rptType.getStrategy(fieldName);
       distanceUnits = rptType.getDistanceUnits();
+      usedLevelBits = rptType.getUsedLevelBits();
     } else if (type instanceof RptWithGeometrySpatialField) {
       RptWithGeometrySpatialField rptSdvType  = (RptWithGeometrySpatialField) type;
       strategy = rptSdvType.getStrategy(fieldName).getIndexStrategy();
       distanceUnits = rptSdvType.getDistanceUnits();
+      usedLevelBits = AbstractSpatialPrefixTreeFieldType.initUsedLevelBits(strategy.getGrid()); // all levels are used
     } else {
       //FYI we support the term query one too but few people use that one
       throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, "heatmap field needs to be of type "
+          + HeatmapSpatialField.class + " or "
           + SpatialRecursivePrefixTreeFieldType.class + " or " + RptWithGeometrySpatialField.class);
     }
 
@@ -106,11 +112,16 @@ public class SpatialHeatmapFacets {
     final int gridLevel;
     Integer gridLevelObj = params.getFieldInt(fieldKey, FacetParams.FACET_HEATMAP_LEVEL);
     final int maxGridLevel = strategy.getGrid().getMaxLevels();
+    final int minGridLevel = usedLevelBits.nextSetBit(0);
     if (gridLevelObj != null) {
       gridLevel = gridLevelObj;
       if (gridLevel <= 0 || gridLevel > maxGridLevel) {
         throw new SolrException(SolrException.ErrorCode.BAD_REQUEST,
-            FacetParams.FACET_HEATMAP_LEVEL +" should be > 0 and <= " + maxGridLevel);
+            FacetParams.FACET_HEATMAP_LEVEL + " should be >= " + minGridLevel + " and <= " + maxGridLevel);
+      }
+      if (!usedLevelBits.get(gridLevel)) {
+        throw new SolrException(SolrException.ErrorCode.BAD_REQUEST,
+            FacetParams.FACET_HEATMAP_LEVEL + " level provided isn't materialized");
       }
     } else {
       //SpatialArgs has utility methods to resolve a 'distErr' from optionally set distErr & distErrPct. Arguably that
@@ -131,8 +142,11 @@ public class SpatialHeatmapFacets {
                 + " if you insist on maximum detail");
       }
       //The SPT (grid) can lookup a grid level satisfying an error distance constraint
-      gridLevel = strategy.getGrid().getLevelForDistance(distErr);
+      int idealGridLevel = strategy.getGrid().getLevelForDistance(distErr);
+      gridLevel = usedLevelBits.nextSetBit(idealGridLevel); // on or after
     }
+    Integer prevGridLevel = gridLevel == minGridLevel ? null : usedLevelBits.prevSetBit(gridLevel - 1);
+    Integer nextGridLevel = gridLevel == maxGridLevel ? null : usedLevelBits.nextSetBit(gridLevel + 1);
 
     // Turn docSet into Bits
     Bits topAcceptDocs;
@@ -156,8 +170,7 @@ public class SpatialHeatmapFacets {
     //Compute!
     final HeatmapFacetCounter.Heatmap heatmap;
     try {
-      heatmap = HeatmapFacetCounter.calcFacets(
-          strategy,
+      heatmap = strategy.calcFacets(
           rb.req.getSearcher().getTopReaderContext(),
           topAcceptDocs,
           boundsShape,
@@ -171,6 +184,8 @@ public class SpatialHeatmapFacets {
     //Populate response
     NamedList<Object> result = new NamedList<>();
     result.add("gridLevel", gridLevel);
+    result.add("prevGridLevel", prevGridLevel);
+    result.add("nextGridLevel", nextGridLevel);
     result.add("columns", heatmap.columns);
     result.add("rows", heatmap.rows);
     result.add("minX", heatmap.region.getMinX());

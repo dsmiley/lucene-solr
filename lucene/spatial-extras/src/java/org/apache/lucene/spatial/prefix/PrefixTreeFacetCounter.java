@@ -51,11 +51,14 @@ public class PrefixTreeFacetCounter {
     /** Called at the start of the segment, if there is indexed data. */
     public void startOfSegment() {}
 
-    /** Called for cells with a leaf, or cells at the target facet level.  {@code count} is greater than zero.
+    /**
+     * Called for cells with a leaf, or cells at the target facet level.  {@code count} is greater than zero.
      * When an ancestor cell is given with non-zero count, the count can be considered to be added to all cells
      * below. You won't necessarily get a cell at level {@code facetLevel} if the indexed data is courser (bigger).
      */
     public abstract void visit(Cell cell, int count);
+
+    // TODO visit() with PostingsEnum in case we want to perhaps calculate things per document
   }
 
   private PrefixTreeFacetCounter() {
@@ -74,6 +77,13 @@ public class PrefixTreeFacetCounter {
   public static void compute(PrefixTreeStrategy strategy, IndexReaderContext context, Bits topAcceptDocs,
                              Shape queryShape, int facetLevel, FacetVisitor facetVisitor)
       throws IOException {
+    boolean hasPrefixTerms = true;
+    compute(strategy.getFieldName(), strategy.getGrid(), hasPrefixTerms, context, topAcceptDocs, queryShape, facetLevel, facetVisitor);
+  }
+
+  /** @see #compute(PrefixTreeStrategy, IndexReaderContext, Bits, Shape, int, FacetVisitor) */
+  public static void compute(String fieldName, SpatialPrefixTree tree, boolean hasPrefixTerms, IndexReaderContext context, Bits topAcceptDocs,
+                             Shape queryShape, int facetLevel, FacetVisitor facetVisitor) throws IOException {
     //We collect per-leaf
     for (final LeafReaderContext leafCtx : context.leaves()) {
       //determine leaf acceptDocs Bits
@@ -94,27 +104,29 @@ public class PrefixTreeFacetCounter {
         };
       }
 
-      compute(strategy, leafCtx, leafAcceptDocs, queryShape, facetLevel, facetVisitor);
+      compute(fieldName, tree, hasPrefixTerms, leafCtx, leafAcceptDocs, queryShape, facetLevel, facetVisitor);
     }
   }
 
   /** Lower-level per-leaf segment method. */
-  public static void compute(final PrefixTreeStrategy strategy, final LeafReaderContext context, final Bits acceptDocs,
+  public static void compute(final String fieldName, final SpatialPrefixTree tree, boolean hasPrefixTerms, final LeafReaderContext context, final Bits acceptDocs,
                              final Shape queryShape, final int facetLevel, final FacetVisitor facetVisitor)
       throws IOException {
     if (acceptDocs != null && acceptDocs.length() != context.reader().maxDoc()) {
       throw new IllegalArgumentException(
           "acceptDocs bits length " + acceptDocs.length() +" != leaf maxdoc " + context.reader().maxDoc());
     }
-    final SpatialPrefixTree tree = strategy.getGrid();
 
     //scanLevel is an optimization knob of AbstractVisitingPrefixTreeFilter. It's unlikely
     // another scanLevel would be much faster and it tends to be a risky knob (can help a little, can hurt a ton).
     // TODO use RPT's configured scan level?  Do we know better here?  Hard to say.
-    final int scanLevel = tree.getMaxLevels();
+    //nocommit
+    int prefixGridScanLevel = Integer.getInteger("hcga.facet.prefixGridScanLevel", -1);
+
+    final int scanLevel = hasPrefixTerms ? tree.getMaxLevels() + prefixGridScanLevel : facetLevel + prefixGridScanLevel;
     //AbstractVisitingPrefixTreeFilter is a Lucene Filter.  We don't need a filter; we use it for its great prefix-tree
     // traversal code.  TODO consider refactoring if/when it makes sense (more use cases than this)
-    new AbstractVisitingPrefixTreeQuery(queryShape, strategy.getFieldName(), tree, facetLevel, scanLevel) {
+    new AbstractVisitingPrefixTreeQuery(queryShape, fieldName, tree, facetLevel, scanLevel, hasPrefixTerms) {
 
       @Override
       public String toString(String field) {

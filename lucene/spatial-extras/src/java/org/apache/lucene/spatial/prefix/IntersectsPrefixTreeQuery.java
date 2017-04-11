@@ -40,6 +40,12 @@ public class IntersectsPrefixTreeQuery extends AbstractVisitingPrefixTreeQuery {
     super(queryShape, fieldName, grid, detailLevel, prefixGridScanLevel);
   }
 
+  public IntersectsPrefixTreeQuery(Shape queryShape, String fieldName,
+                                   SpatialPrefixTree grid, int detailLevel,
+                                   int prefixGridScanLevel, boolean hasPrefixTerms) {
+    super(queryShape, fieldName, grid, detailLevel, prefixGridScanLevel, hasPrefixTerms);
+  }
+
   @Override
   protected DocIdSet getDocIdSet(LeafReaderContext context) throws IOException {
     /* Possible optimizations (in IN ADDITION TO THOSE LISTED IN VISITORTEMPLATE):

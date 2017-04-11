@@ -27,11 +27,15 @@ import org.apache.solr.common.params.FacetParams;
 import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.common.util.NamedList;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.locationtech.spatial4j.distance.DistanceUtils;
 
 public class SpatialHeatmapFacetsTest extends BaseDistributedSearchTestCase {
-  private static final String FIELD = "srpt_quad";
+  private static final String FIELD = "heatmap";//nocommit
+  private static double degreesToUnits = DistanceUtils.DEG_TO_KM;
+  private SolrParams baseParams = params("q", "*:*", "rows", "0", "facet", "true", FacetParams.FACET_HEATMAP, FIELD);
 
   @BeforeClass
   public static void beforeSuperClass() throws Exception {
@@ -42,15 +46,16 @@ public class SpatialHeatmapFacetsTest extends BaseDistributedSearchTestCase {
     System.setProperty("java.awt.headless", "true");
   }
 
-  @SuppressWarnings("unchecked")
-  @Test
-  public void test() throws Exception {
+  @Before
+  public void doBefore() {
     handle.clear();
     handle.put("QTime", SKIPVAL);
     handle.put("timestamp", SKIPVAL);
     handle.put("maxScore", SKIPVAL);
+  }
 
-    SolrParams baseParams = params("q", "*:*", "rows", "0", "facet", "true", FacetParams.FACET_HEATMAP, FIELD);
+  @Test
+  public void testParameterInterpretation() throws Exception {
 
     final String testBox = "[\"50 50\" TO \"180 90\"]";//top-right somewhere on edge (whatever)
 
@@ -69,27 +74,51 @@ public class SpatialHeatmapFacetsTest extends BaseDistributedSearchTestCase {
     }
     // Monkeying with these params changes the gridLevel in different directions. We don't test the exact
     // computation here; that's not _that_ relevant, and is Lucene spatial's job (not Solr) any way.
-    assertEquals(7, getHmObj(query(params(baseParams, FacetParams.FACET_HEATMAP_GEOM, testBox))).get("gridLevel"));//default
-    assertEquals(3, getHmObj(query(params(baseParams, FacetParams.FACET_HEATMAP_GEOM, testBox, FacetParams.FACET_HEATMAP_LEVEL, "3"))).get("gridLevel"));
-    assertEquals(2, getHmObj(query(params(baseParams, FacetParams.FACET_HEATMAP_GEOM, testBox, FacetParams.FACET_HEATMAP_DIST_ERR, "100"))).get("gridLevel"));
+    assertGridLevel(2, getHmObj(query(params(baseParams, FacetParams.FACET_HEATMAP_GEOM, testBox, FacetParams.FACET_HEATMAP_DIST_ERR, Double.toString(100 * degreesToUnits)))).get("gridLevel"));
+    // test given explicit grid level:
+    if (FIELD == "heatmap") {
+      try {
+        assertGridLevel(3, getHmObj(query(params(baseParams, FacetParams.FACET_HEATMAP_GEOM, testBox, FacetParams.FACET_HEATMAP_LEVEL, "3"))).get("gridLevel"));
+        fail();
+      } catch (Exception e) {
+        //expected; not "materialized" (given grid level is too small in this case)
+      }
+      assertGridLevel(6, getHmObj(query(params(baseParams, FacetParams.FACET_HEATMAP_GEOM, testBox, FacetParams.FACET_HEATMAP_LEVEL, "6"))).get("gridLevel"));
+    } else {
+      assertGridLevel(3, getHmObj(query(params(baseParams, FacetParams.FACET_HEATMAP_GEOM, testBox, FacetParams.FACET_HEATMAP_LEVEL, "3"))).get("gridLevel"));
+    }
+    assertGridLevel(6, getHmObj(query(params(baseParams, FacetParams.FACET_HEATMAP_DIST_ERR_PCT, "0.10"))).get("gridLevel"));
+    assertGridLevel(7, getHmObj(query(params(baseParams, FacetParams.FACET_HEATMAP_GEOM, testBox))).get("gridLevel"));
     //TODO test impact of distance units
-    assertEquals(9, getHmObj(query(params(baseParams, FacetParams.FACET_HEATMAP_GEOM, testBox, FacetParams.FACET_HEATMAP_DIST_ERR_PCT, "0.05"))).get("gridLevel"));
-    assertEquals(6, getHmObj(query(params(baseParams, FacetParams.FACET_HEATMAP_DIST_ERR_PCT, "0.10"))).get("gridLevel"));
+    assertGridLevel(9, getHmObj(query(params(baseParams, FacetParams.FACET_HEATMAP_GEOM, testBox, FacetParams.FACET_HEATMAP_DIST_ERR_PCT, "0.05"))).get("gridLevel"));
 
     //test key output label doing 2 heatmaps with different settings on the same field
     {
       final ModifiableSolrParams params = params(baseParams, FacetParams.FACET_HEATMAP_DIST_ERR_PCT, "0.10");
       String courseFormat = random().nextBoolean() ? "png" : "ints2D";
       params.add(FacetParams.FACET_HEATMAP, "{!key=course "
-          + FacetParams.FACET_HEATMAP_LEVEL + "=2 "
+          + FacetParams.FACET_HEATMAP_LEVEL + "=6 "
           + FacetParams.FACET_HEATMAP_FORMAT + "=" + courseFormat
           + "}" + FIELD);
       final QueryResponse response = query(params);
-      assertEquals(6, getHmObj(response).get("gridLevel"));//same test as above
-      assertEquals(2, response.getResponse().findRecursive("facet_counts", "facet_heatmaps", "course", "gridLevel"));
+      assertGridLevel(6, getHmObj(response).get("gridLevel"));
+      assertGridLevel(2, response.getResponse().findRecursive("facet_counts", "facet_heatmaps", "course", "gridLevel"));
       assertTrue(((NamedList<Object>) response.getResponse().findRecursive("facet_counts", "facet_heatmaps", "course"))
           .asMap(0).containsKey("counts_" + courseFormat));
     }
+  }
+
+  public void assertGridLevel(int expected, Object gridLevel) throws Exception {
+    // The HeatmapSpatialField is configured to only do levels 6 thru 23
+    if (FIELD == "heatmap" && expected < 6) {
+      expected = 6;
+    }
+    assertEquals(expected, gridLevel);
+  }
+
+  @SuppressWarnings("unchecked")
+  @Test
+  public void test() throws Exception {
 
     // ------ Index data
 

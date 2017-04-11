@@ -46,8 +46,9 @@ class FilterCellIterator extends CellIterator {
       if (shapeFilter == null) {
         return true;
       } else {
-        SpatialRelation rel = nextCell.getShape().relate(shapeFilter);
+        SpatialRelation rel = shapeFilter.relate(nextCell.getShape());
         if (rel.intersects()) {
+          rel = rel.transpose();
           nextCell.setShapeRel(rel);
           if (rel == SpatialRelation.WITHIN)
             nextCell.setLeaf();

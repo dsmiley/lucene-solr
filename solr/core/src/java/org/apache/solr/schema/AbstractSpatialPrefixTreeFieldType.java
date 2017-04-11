@@ -29,6 +29,7 @@ import org.apache.lucene.spatial.prefix.PrefixTreeStrategy;
 import org.apache.lucene.spatial.prefix.tree.SpatialPrefixTree;
 import org.apache.lucene.spatial.prefix.tree.SpatialPrefixTreeFactory;
 import org.apache.lucene.spatial.query.SpatialArgsParser;
+import org.apache.lucene.util.FixedBitSet;
 import org.apache.solr.util.MapListener;
 
 import org.locationtech.spatial4j.shape.Shape;
@@ -44,11 +45,13 @@ public abstract class AbstractSpatialPrefixTreeFieldType<T extends PrefixTreeStr
   /** @see org.apache.lucene.spatial.prefix.RecursivePrefixTreeStrategy#setDefaultFieldValuesArrayLen(int)  */
   public static final String DEFAULT_FIELD_VALUES_ARRAY_LEN = "defaultFieldValuesArrayLen";
 
+  protected final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+
   protected SpatialPrefixTree grid;
   private Double distErrPct;
-  private Integer defaultFieldValuesArrayLen;
+  protected FixedBitSet usedLevelBits;
 
-  private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+  private Integer defaultFieldValuesArrayLen;
 
   @Override
   protected void init(IndexSchema schema, Map<String, String> args) {
@@ -70,11 +73,19 @@ public abstract class AbstractSpatialPrefixTreeFieldType<T extends PrefixTreeStr
     if (v != null)
       distErrPct = Double.valueOf(v);
 
+    usedLevelBits = initUsedLevelBits(grid);
+
     v = args.remove(DEFAULT_FIELD_VALUES_ARRAY_LEN);
     if (v != null)
       defaultFieldValuesArrayLen = Integer.valueOf(v);
   }
-  
+
+  public static FixedBitSet initUsedLevelBits(SpatialPrefixTree grid) {
+    FixedBitSet usedLevelBits = new FixedBitSet(grid.getMaxLevels() + 1); // + 1 for level zero (never "used")
+    usedLevelBits.set(1, usedLevelBits.length());
+    return usedLevelBits;
+  }
+
   /**
    * This analyzer is not actually used for indexing.  It is implemented here
    * so that the analysis UI will show reasonable tokens.
@@ -128,4 +139,7 @@ public abstract class AbstractSpatialPrefixTreeFieldType<T extends PrefixTreeStr
 
   protected abstract T newPrefixTreeStrategy(String fieldName);
 
+  public FixedBitSet getUsedLevelBits() {
+    return usedLevelBits;
+  }
 }

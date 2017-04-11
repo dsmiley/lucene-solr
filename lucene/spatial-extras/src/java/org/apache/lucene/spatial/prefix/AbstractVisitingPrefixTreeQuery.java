@@ -52,10 +52,19 @@ public abstract class AbstractVisitingPrefixTreeQuery extends AbstractPrefixTree
 
   protected final int prefixGridScanLevel;//at least one less than grid.getMaxLevels()
 
+  /** Advanced toggle for trees that actually have no prefix terms (atypical). */
+  protected final boolean hasPrefixTerms;
+
   public AbstractVisitingPrefixTreeQuery(Shape queryShape, String fieldName, SpatialPrefixTree grid,
                                          int detailLevel, int prefixGridScanLevel) {
+    this(queryShape, fieldName, grid, detailLevel, prefixGridScanLevel, true);
+  }
+
+  public AbstractVisitingPrefixTreeQuery(Shape queryShape, String fieldName, SpatialPrefixTree grid,
+                                         int detailLevel, int prefixGridScanLevel, boolean hasPrefixTerms) {
     super(queryShape, fieldName, grid, detailLevel);
     this.prefixGridScanLevel = Math.max(0, Math.min(prefixGridScanLevel, grid.getMaxLevels() - 1));
+    this.hasPrefixTerms = hasPrefixTerms;
     assert detailLevel <= grid.getMaxLevels();
   }
 
@@ -154,44 +163,54 @@ public abstract class AbstractVisitingPrefixTreeQuery extends AbstractPrefixTree
           }
         }
 
-        //Seek to curVNode's cell (or skip if termsEnum has moved beyond)
-        final int compare = indexedCell.compareToNoLeaf(curVNode.cell);
-        if (compare > 0) {
-          // The indexed cell is after; continue loop to next query cell
-          continue;
-        }
+        int compare = indexedCell.compareToNoLeaf(curVNode.cell);
+
         if (compare < 0) {
-          // The indexed cell is before; seek ahead to query cell:
-          //      Seek !
+          // The indexed cell is before; SEEK ahead to query cell:
           curVNode.cell.getTokenBytesNoLeaf(curVNodeTerm);
           TermsEnum.SeekStatus seekStatus = termsEnum.seekCeil(curVNodeTerm);
           if (seekStatus == TermsEnum.SeekStatus.END)
             break; // all done
           thisTerm = termsEnum.term();
           indexedCell = grid.readCell(thisTerm, indexedCell);
-          if (seekStatus == TermsEnum.SeekStatus.NOT_FOUND) {
-            // Did we find a leaf of the cell we were looking for or something after?
-            if (!indexedCell.isLeaf() || indexedCell.compareToNoLeaf(curVNode.cell) != 0)
-              continue; // The indexed cell is after; continue loop to next query cell
+          // Did we find a leaf of the cell we were looking for or something after?
+          compare = (seekStatus == TermsEnum.SeekStatus.FOUND ||
+              (indexedCell.isLeaf() && indexedCell.compareToNoLeaf(curVNode.cell) == 0)) ? 0 : 1;
+        }
+
+        // The indexed cell is >= curVNode.cell
+
+        final boolean descend;
+        if (hasPrefixTerms) {
+
+          if (compare > 0) {
+            assert ! curVNode.cell.isPrefixOf(indexedCell) : "missing prefix term?";
+            // The indexed cell is after and not a prefix; continue loop to next query cell
+            continue;
           }
-        }
-        // indexedCell == queryCell (disregarding leaf).
 
-        // If indexedCell is a leaf then there's no prefix (prefix sorts before) -- just visit and continue
-        if (indexedCell.isLeaf()) {
-          visitLeaf(indexedCell);//TODO or query cell? Though shouldn't matter.
-          if (!nextTerm()) break;
-          continue;
-        }
-        // If a prefix (non-leaf) then visit; see if we descend.
-        final boolean descend = visitPrefix(curVNode.cell);//need to use curVNode.cell not indexedCell
-        if (!nextTerm()) break;
-        // Check for adjacent leaf with the same prefix
-        if (indexedCell.isLeaf() && indexedCell.getLevel() == curVNode.cell.getLevel()) {
-          visitLeaf(indexedCell);//TODO or query cell? Though shouldn't matter.
-          if (!nextTerm()) break;
-        }
+          // indexedCell == queryCell (disregarding leaf).
 
+          // If indexedCell is a leaf then there's no prefix (prefix sorts before) -- just visit and continue
+          if (indexedCell.isLeaf()) {
+            visitLeaf(indexedCell);//TODO or query cell? Though shouldn't matter.
+            if (!nextTerm()) break;
+            continue;
+          }
+          // If a prefix (non-leaf) then visit; see if we descend.
+          descend = visitPrefix(curVNode.cell);//need to use curVNode.cell not indexedCell
+          if (!nextTerm()) break;
+          // Check for adjacent leaf with the same prefix
+          if (indexedCell.isLeaf() && indexedCell.getLevel() == curVNode.cell.getLevel()) {
+            visitLeaf(indexedCell);//TODO or query cell? Though shouldn't matter.
+            if (!nextTerm()) break;
+          }
+
+        } else { // has NO prefix terms (and thus no prefix terms w/ leaves)
+
+          descend = curVNode.cell.isPrefixOf(indexedCell);
+
+        }
 
         if (descend) {
           addIntersectingChildren();
@@ -207,8 +226,6 @@ public abstract class AbstractVisitingPrefixTreeQuery extends AbstractPrefixTree
     private void addIntersectingChildren() throws IOException {
       assert thisTerm != null;
       Cell cell = curVNode.cell;
-      if (cell.getLevel() >= detailLevel)
-        throw new IllegalStateException("Spatial logic error");
 
       //Decide whether to continue to divide & conquer, or whether it's time to
       // scan through terms beneath this cell.
@@ -221,8 +238,10 @@ public abstract class AbstractVisitingPrefixTreeQuery extends AbstractPrefixTree
         //Divide & conquer (ultimately termsEnum.seek())
 
         Iterator<Cell> subCellsIter = findSubCellsToVisit(cell);
-        if (!subCellsIter.hasNext())//not expected
+        if (!subCellsIter.hasNext()) {//not expected
+          assert false : "didn't find sub-cells to visit; odd";
           return;
+        }
         curVNode.children = new VNodeCellIterator(subCellsIter, new VNode(curVNode));
 
       } else {
@@ -249,7 +268,6 @@ public abstract class AbstractVisitingPrefixTreeQuery extends AbstractPrefixTree
      * #visitScanned(org.apache.lucene.spatial.prefix.tree.Cell)}.
      */
     protected void scan(int scanDetailLevel) throws IOException {
-      //note: this can be a do-while instead in 6x; 5x has a back-compat with redundant leaves -- LUCENE-4942
       while (curVNode.cell.isPrefixOf(indexedCell)) {
         if (indexedCell.getLevel() == scanDetailLevel
             || (indexedCell.getLevel() < scanDetailLevel && indexedCell.isLeaf())) {
@@ -328,9 +346,9 @@ public abstract class AbstractVisitingPrefixTreeQuery extends AbstractPrefixTree
      * {@link #visitPrefix(org.apache.lucene.spatial.prefix.tree.Cell)}.
      */
     protected void visitScanned(Cell cell) throws IOException {
-      final SpatialRelation relate = cell.getShape().relate(queryShape);
+      final SpatialRelation relate = queryShape.relate(cell.getShape());
       if (relate.intersects()) {
-        cell.setShapeRel(relate);//just being pedantic
+        cell.setShapeRel(relate.transpose());//just being pedantic
         if (cell.isLeaf()) {
           visitLeaf(cell);
         } else {

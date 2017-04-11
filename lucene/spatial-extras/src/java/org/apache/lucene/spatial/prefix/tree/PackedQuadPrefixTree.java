@@ -18,10 +18,14 @@ package org.apache.lucene.spatial.prefix.tree;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.function.Supplier;
 
 import org.locationtech.spatial4j.context.SpatialContext;
+import org.locationtech.spatial4j.context.SpatialContextFactory;
 import org.locationtech.spatial4j.shape.Point;
 import org.locationtech.spatial4j.shape.Rectangle;
 import org.locationtech.spatial4j.shape.Shape;
@@ -53,22 +57,50 @@ public class PackedQuadPrefixTree extends QuadPrefixTree {
   protected static final byte[] QUAD = new byte[] {0x00, 0x01, 0x02, 0x03};
 
   protected boolean leafyPrune = true;
+  protected final SpatialContext gridCtx; // for producing any Rectangles
 
   /**
    * Factory for creating {@link PackedQuadPrefixTree} instances with useful defaults.
    */
   public static class Factory extends QuadPrefixTree.Factory {
+
+    private Rectangle worldBounds;
+
+    @Override //nocommit move to superclass
+    protected void init(Map<String, String> args, SpatialContext ctx) {
+      super.init(args, ctx);
+      this.worldBounds = ctx.getWorldBounds();
+      String squareStr = args.get("square");
+      if (squareStr != null && Boolean.parseBoolean(squareStr) && worldBounds.getWidth() != worldBounds.getHeight()) {
+        if (ctx.isGeo()) {
+          this.worldBounds = new RectangleImpl(-180, 180, -180, 180, ctx);
+        } else {
+          //TODO
+          throw new IllegalArgumentException("At this time, 'square' is only supported with geo=true");
+        }
+      }
+    }
+
     @Override
     protected SpatialPrefixTree newSPT() {
-      return new PackedQuadPrefixTree(ctx, maxLevels != null ? maxLevels : MAX_LEVELS_POSSIBLE);
+      return new PackedQuadPrefixTree(ctx, worldBounds, maxLevels != null ? maxLevels : MAX_LEVELS_POSSIBLE);
     }
   }
 
   public PackedQuadPrefixTree(SpatialContext ctx, int maxLevels) {
-    super(ctx, maxLevels);
+    this(ctx, ctx.getWorldBounds(), maxLevels);
+  }
+
+  public PackedQuadPrefixTree(SpatialContext ctx, Rectangle bounds, int maxLevels) {
+    super(ctx, bounds, maxLevels);
     if (maxLevels > MAX_LEVELS_POSSIBLE) {
       throw new IllegalArgumentException("maxLevels of " + maxLevels + " exceeds limit of " + MAX_LEVELS_POSSIBLE);
     }
+    // We often need to produce a simple Rectangle that doesn't cross the dateline. Create a template.
+    SpatialContextFactory scf = new SpatialContextFactory();
+    scf.geo = false; //thus rect.relate(point) does no dateline wrap check; not needed
+    scf.worldBounds = bounds; // doesn't actually matter
+    gridCtx = scf.newSpatialContext();
   }
 
   @Override
@@ -83,32 +115,36 @@ public class PackedQuadPrefixTree extends QuadPrefixTree {
 
   @Override
   public Cell getCell(Point p, int level) {
-    List<Cell> cells = new ArrayList<>(1);
-    build(xmid, ymid, 0, cells, 0x0L, ctx.makePoint(p.getX(), p.getY()), level);
-    return cells.get(0);//note cells could be longer if p on edge
+    LinkedList<Cell> cells = new LinkedList<>();
+    RectangleImpl scratchRectangle = new RectangleImpl(0, 0, 0, 0, gridCtx);
+    build(xmid, ymid, 0, cells, 0x0L, p, level, scratchRectangle);
+    return cells.getFirst();//note cells could be longer if p on edge
   }
 
-  protected void build(double x, double y, int level, List<Cell> matches, long term, Shape shape, int maxLevel) {
+  protected void build(double x, double y, int level, List<Cell> matches, long term, Shape shape, int maxLevel, Rectangle scratchRectangle) {
     double w = levelW[level] / 2;
     double h = levelH[level] / 2;
 
     // Z-Order
     // http://en.wikipedia.org/wiki/Z-order_%28curve%29
-    checkBattenberg(QUAD[0], x - w, y + h, level, matches, term, shape, maxLevel);
-    checkBattenberg(QUAD[1], x + w, y + h, level, matches, term, shape, maxLevel);
-    checkBattenberg(QUAD[2], x - w, y - h, level, matches, term, shape, maxLevel);
-    checkBattenberg(QUAD[3], x + w, y - h, level, matches, term, shape, maxLevel);
+    checkBattenberg(QUAD[0], x - w, y + h, level, matches, term, shape, maxLevel, scratchRectangle);
+    checkBattenberg(QUAD[1], x + w, y + h, level, matches, term, shape, maxLevel, scratchRectangle);
+    checkBattenberg(QUAD[2], x - w, y - h, level, matches, term, shape, maxLevel, scratchRectangle);
+    checkBattenberg(QUAD[3], x + w, y - h, level, matches, term, shape, maxLevel, scratchRectangle);
   }
 
   protected void checkBattenberg(byte quad, double cx, double cy, int level, List<Cell> matches,
-                               long term, Shape shape, int maxLevel) {
+                                 long term, Shape shape, int maxLevel, Rectangle scratchRectangle) {
     // short-circuit if we find a match for the point (no need to continue recursion)
     if (shape instanceof Point && !matches.isEmpty())
       return;
     double w = levelW[level] / 2;
     double h = levelH[level] / 2;
 
-    SpatialRelation v = shape.relate(ctx.makeRectangle(cx - w, cx + w, cy - h, cy + h));
+    scratchRectangle.reset(cx - w, cx + w, cy - h, cy + h);
+    // note: it's important we call it this way instead of the inverse; this way the passed shape impl can decide
+    //   what to do
+    SpatialRelation v = shape.relate(scratchRectangle);
 
     if (SpatialRelation.DISJOINT == v) {
       return;
@@ -122,7 +158,7 @@ public class PackedQuadPrefixTree extends QuadPrefixTree {
     if (SpatialRelation.CONTAINS == v || (level >= maxLevel)) {
       matches.add(new PackedQuadCell(term, v.transpose()));
     } else {// SpatialRelation.WITHIN, SpatialRelation.INTERSECTS
-      build(cx, cy, level, matches, term, shape, maxLevel);
+      build(cx, cy, level, matches, term, shape, maxLevel, scratchRectangle);
     }
   }
 
@@ -334,7 +370,7 @@ public class PackedQuadPrefixTree extends QuadPrefixTree {
         width = gridW;
         height = gridH;
       }
-      return new RectangleImpl(xmin, xmin + width, ymin, ymin + height, ctx);
+      return new RectangleImpl(xmin, xmin + width, ymin, ymin + height, gridCtx);
     }
 
     private long fromBytes(byte b1, byte b2, byte b3, byte b4, byte b5, byte b6, byte b7, byte b8) {
@@ -400,10 +436,11 @@ public class PackedQuadPrefixTree extends QuadPrefixTree {
       SpatialRelation rel;
       // loop until we're at the end of the quad tree or we hit a relation
       while (thisCell != null) {
-        rel = thisCell.getShape().relate(shape);
+        rel = shape.relate(thisCell.getShape());
         if (rel == SpatialRelation.DISJOINT) {
           thisCell = thisCell.nextCell(false);
         } else { // within || intersects || contains
+          rel = rel.transpose();
           thisCell.setShapeRel(rel);
           nextCell = thisCell;
           if (rel == SpatialRelation.WITHIN) {
