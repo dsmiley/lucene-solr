@@ -93,6 +93,9 @@ public class HeatmapFacetCounter {
                                    Shape inputShape, final int facetLevel, int maxCells) throws IOException {
 
     final Heatmap heatmap = initHeatmap(inputShape, strategy.getGrid(), facetLevel, maxCells);
+    if (topAcceptDocs instanceof Bits.MatchNoBits) {
+      return heatmap; // short-circuit
+    }
     final double heatMinX = heatmap.region.getMinX();
     final double heatMaxX = heatmap.region.getMaxX();
     final double heatMinY = heatmap.region.getMinY();
