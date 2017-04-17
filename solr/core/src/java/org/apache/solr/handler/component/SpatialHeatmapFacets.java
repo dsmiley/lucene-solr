@@ -51,8 +51,10 @@ import org.apache.solr.schema.RptWithGeometrySpatialField;
 import org.apache.solr.schema.SchemaField;
 import org.apache.solr.schema.SpatialRecursivePrefixTreeFieldType;
 import org.apache.solr.search.BitDocSet;
+import org.apache.solr.search.DocIterator;
 import org.apache.solr.search.DocSet;
 import org.apache.solr.search.QueryParsing;
+import org.apache.solr.search.SolrIndexSearcher;
 import org.apache.solr.util.DistanceUnits;
 import org.apache.solr.util.SpatialUtils;
 import org.locationtech.spatial4j.context.SpatialContext;
@@ -148,31 +150,12 @@ public class SpatialHeatmapFacets {
     Integer prevGridLevel = gridLevel == minGridLevel ? null : usedLevelBits.prevSetBit(gridLevel - 1);
     Integer nextGridLevel = gridLevel == maxGridLevel ? null : usedLevelBits.nextSetBit(gridLevel + 1);
 
-    // Turn docSet into Bits
-    Bits topAcceptDocs;
-    if (docSet instanceof BitDocSet) {
-      BitDocSet set = (BitDocSet) docSet;
-      topAcceptDocs = set.getBits();
-    } else {
-      topAcceptDocs = new Bits() {
-        @Override
-        public boolean get(int index) {
-          return docSet.exists(index);
-        }
-
-        @Override
-        public int length() {
-          return rb.req.getSearcher().maxDoc();
-        }
-      };
-    }
-
     //Compute!
     final HeatmapFacetCounter.Heatmap heatmap;
     try {
       heatmap = strategy.calcFacets(
           rb.req.getSearcher().getTopReaderContext(),
-          topAcceptDocs,
+          getTopAcceptDocs(docSet, rb.req.getSearcher()), // turn DocSet into Bits
           boundsShape,
           gridLevel,
           params.getFieldInt(fieldKey, FacetParams.FACET_HEATMAP_MAX_CELLS, 100_000) // will throw if exceeded
@@ -203,6 +186,23 @@ public class SpatialHeatmapFacets {
     formatCountsAndAddToNL(fieldKey, rb, params, heatmap.columns, heatmap.rows, hasNonZero ? heatmap.counts : null, result);
 
     return result;
+  }
+
+  private static Bits getTopAcceptDocs(DocSet docSet, SolrIndexSearcher searcher) throws IOException {
+    if (searcher.getLiveDocs() == docSet) {
+      return null; // means match everything (all live docs). This can speedup things a lot.
+    } else if (docSet.size() == 0) {
+      return new Bits.MatchNoBits(searcher.maxDoc()); // can speedup things a lot
+    } else if (docSet instanceof BitDocSet) {
+      return ((BitDocSet) docSet).getBits();
+    } else {
+      // TODO DocSetBase.calcBits ought to be at DocSet level?
+      FixedBitSet bits = new FixedBitSet(searcher.maxDoc());
+      for (DocIterator iter = docSet.iterator(); iter.hasNext();) {
+        bits.set(iter.nextDoc());
+      }
+      return bits;
+    }
   }
 
   private static void formatCountsAndAddToNL(String fieldKey, ResponseBuilder rb, SolrParams params,
