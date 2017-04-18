@@ -183,12 +183,14 @@ public class HeatmapSpatialField extends AbstractSpatialPrefixTreeFieldType<Heat
     @Override
     public HeatmapFacetCounter.Heatmap calcFacets(IndexReaderContext context, Bits topAcceptDocs,
                                                   Shape inputShape, int facetLevel, int maxCells) throws IOException {
-      String fieldName = getFieldNameForLevel(facetLevel);
       HeatmapFacetCounter.Heatmap heatmap = HeatmapFacetCounter.initHeatmap(inputShape, grid, facetLevel, maxCells);
+      if (topAcceptDocs instanceof Bits.MatchNoBits) {
+        return heatmap; // short-circuit
+      }
 
       // see PrefixTreeFacetCounter ... but we do it differently
       final boolean hasPrefixTerms = false;
-      PrefixTreeFacetCounter.compute(fieldName, grid,
+      PrefixTreeFacetCounter.compute(getFieldNameForLevel(facetLevel), grid,
           hasPrefixTerms, context, topAcceptDocs, inputShape, facetLevel,
           new PrefixTreeFacetCounter.FacetVisitor() {
             final double cellWidth = heatmap.region.getWidth() / heatmap.columns;
