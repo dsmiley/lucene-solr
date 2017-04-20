@@ -56,6 +56,10 @@
 
   <fieldType name="llp" class="solr.LatLonPointSpatialField" distanceUnits="degrees" multiValued="true" />
 
+  <fieldType name="heatmap" class="solr.HeatmapSpatialField" multiValued="true" />
+
+
+
   <field name="id" type="string" required="true"/>
 
   <field name="srpt_geohash" type="srpt_geohash" multiValued="true"/>
@@ -72,6 +76,7 @@
   <dynamicField name="bboxD_*" type="bbox" indexed="true"/>
   <dynamicField name="str_*" type="string" indexed="true" stored="true"/>
 
+  <field name="heatmap" type="heatmap" multiValued="true" />
 
   <uniqueKey>id</uniqueKey>
 
