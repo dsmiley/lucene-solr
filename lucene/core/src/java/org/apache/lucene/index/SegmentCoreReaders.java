@@ -28,7 +28,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.lucene.codecs.Codec;
 import org.apache.lucene.codecs.DocValuesProducer;
 import org.apache.lucene.codecs.FieldsProducer;
-import org.apache.lucene.codecs.NormsProducer;
 import org.apache.lucene.codecs.PostingsFormat;
 import org.apache.lucene.codecs.StoredFieldsReader;
 import org.apache.lucene.codecs.TermVectorsReader;
@@ -57,7 +56,7 @@ final class SegmentCoreReaders implements Accountable {
   private final AtomicInteger ref = new AtomicInteger(1);
   
   final FieldsProducer fields;
-  final NormsProducer normsProducer;
+  final DocValuesProducer normsProducer;
 
   final int termsIndexDivisor;
 
@@ -174,7 +173,7 @@ final class SegmentCoreReaders implements Accountable {
         return null;
       }
       assert normsProducer != null;
-      norms = normsProducer.getNorms(fi);
+      norms = normsProducer.getNumeric(fi);
       normFields.put(field, norms);
       return norms;
     }
@@ -222,7 +221,6 @@ final class SegmentCoreReaders implements Accountable {
     coreClosedListeners.remove(listener);
   }
 
-  // TODO: remove this, it can just be on SR
   @Override
   public long ramBytesUsed() {
     return BASE_RAM_BYTES_USED +
@@ -230,10 +228,5 @@ final class SegmentCoreReaders implements Accountable {
         ((fields!=null) ? fields.ramBytesUsed() : 0) + 
         ((fieldsReaderOrig!=null)? fieldsReaderOrig.ramBytesUsed() : 0) + 
         ((termVectorsReaderOrig!=null) ? termVectorsReaderOrig.ramBytesUsed() : 0);
-  }
-
-  @Override
-  public Iterable<? extends Accountable> getChildResources() {
-    return Collections.emptyList();
   }
 }

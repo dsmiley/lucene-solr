@@ -26,7 +26,6 @@ import org.apache.solr.common.cloud.ClusterState;
 import org.apache.solr.common.cloud.SolrZkClient;
 import org.apache.solr.common.cloud.ZkNodeProps;
 import org.apache.solr.common.cloud.ZkStateReader;
-import org.apache.solr.common.params.CollectionParams;
 import org.apache.solr.common.params.CoreAdminParams;
 import org.apache.solr.common.params.CoreAdminParams.CoreAdminAction;
 import org.apache.solr.common.params.ModifiableSolrParams;
@@ -314,7 +313,18 @@ public class OverseerCollectionProcessorTest extends SolrTestCaseJ4 {
       public String answer() throws Throwable {
         String key = (String) getCurrentArguments()[0];
         zkMap.put(key, null);
-        handleCreateCollMessage((byte[]) getCurrentArguments()[1]);
+        handleCrateCollMessage((byte[]) getCurrentArguments()[1]);
+        return key;
+      }
+    }).anyTimes();
+
+    solrZkClientMock.create(anyObject(String.class), anyObject(byte[].class), anyObject(List.class),anyObject(CreateMode.class), anyBoolean());
+    expectLastCall().andAnswer(new IAnswer<String>() {
+      @Override
+      public String answer() throws Throwable {
+        String key = (String) getCurrentArguments()[0];
+        zkMap.put(key, null);
+        handleCrateCollMessage((byte[]) getCurrentArguments()[1]);
         return key;
       }
     }).anyTimes();
@@ -336,14 +346,16 @@ public class OverseerCollectionProcessorTest extends SolrTestCaseJ4 {
         return zkMap.containsKey(key);
       }
     }).anyTimes();
+
+    zkMap.put("/configs/myconfig", null);
     
     return liveNodes;
   }
 
-  private void handleCreateCollMessage(byte[] bytes) {
+  private void handleCrateCollMessage(byte[] bytes) {
     try {
       ZkNodeProps props = ZkNodeProps.load(bytes);
-      if(CollectionParams.CollectionAction.CREATE.isEqual(props.getStr("operation"))){
+      if("createcollection".equals(props.getStr("operation"))){
         String collName = props.getStr("name") ;
         if(collName != null) collectionsSet.add(collName);
       }
@@ -391,7 +403,7 @@ public class OverseerCollectionProcessorTest extends SolrTestCaseJ4 {
     ZkNodeProps props;
     if (sendCreateNodeList) {
       props = new ZkNodeProps(Overseer.QUEUE_OPERATION,
-          CollectionParams.CollectionAction.CREATE.toLower(),
+          OverseerCollectionProcessor.CREATECOLLECTION,
           ZkStateReader.REPLICATION_FACTOR,
           replicationFactor.toString(), "name", COLLECTION_NAME,
           "collection.configName", CONFIG_NAME,
@@ -402,7 +414,7 @@ public class OverseerCollectionProcessorTest extends SolrTestCaseJ4 {
           (createNodeList != null)?StrUtils.join(createNodeList, ','):null);
     } else {
       props = new ZkNodeProps(Overseer.QUEUE_OPERATION,
-          CollectionParams.CollectionAction.CREATE.toLower(),
+          OverseerCollectionProcessor.CREATECOLLECTION,
           ZkStateReader.REPLICATION_FACTOR,
           replicationFactor.toString(), "name", COLLECTION_NAME,
           "collection.configName", CONFIG_NAME,

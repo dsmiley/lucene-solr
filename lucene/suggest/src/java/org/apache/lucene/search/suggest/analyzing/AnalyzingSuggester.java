@@ -19,7 +19,6 @@ package org.apache.lucene.search.suggest.analyzing;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -37,8 +36,6 @@ import org.apache.lucene.store.ByteArrayDataInput;
 import org.apache.lucene.store.ByteArrayDataOutput;
 import org.apache.lucene.store.DataInput;
 import org.apache.lucene.store.DataOutput;
-import org.apache.lucene.util.Accountable;
-import org.apache.lucene.util.Accountables;
 import org.apache.lucene.util.ArrayUtil;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
@@ -62,6 +59,8 @@ import org.apache.lucene.util.fst.PositiveIntOutputs;
 import org.apache.lucene.util.fst.Util.Result;
 import org.apache.lucene.util.fst.Util.TopResults;
 import org.apache.lucene.util.fst.Util;
+
+import static org.apache.lucene.util.automaton.Operations.DEFAULT_MAX_DETERMINIZED_STATES;
 
 /**
  * Suggester that first analyzes the surface form, adds the
@@ -258,15 +257,6 @@ public class AnalyzingSuggester extends Lookup {
   @Override
   public long ramBytesUsed() {
     return fst == null ? 0 : fst.ramBytesUsed();
-  }
-
-  @Override
-  public Iterable<? extends Accountable> getChildResources() {
-    if (fst == null) {
-      return Collections.emptyList();
-    } else {
-      return Collections.singletonList(Accountables.namedAccountable("fst", fst));
-    }
   }
 
   private int[] topoSortStates(Automaton a) {
@@ -512,7 +502,7 @@ public class AnalyzingSuggester extends Lookup {
       new OfflineSorter(new AnalyzingComparator(hasPayloads)).sort(tempInput, tempSorted);
 
       // Free disk space:
-      Files.delete(tempInput.toPath());
+      tempInput.delete();
 
       reader = new OfflineSorter.ByteSequencesReader(tempSorted);
      
@@ -605,13 +595,14 @@ public class AnalyzingSuggester extends Lookup {
       
       success = true;
     } finally {
-      IOUtils.closeWhileHandlingException(reader, writer);
-      
       if (success) {
-        IOUtils.deleteFilesIfExist(tempInput, tempSorted);
+        IOUtils.close(reader, writer);
       } else {
-        IOUtils.deleteFilesIgnoringExceptions(tempInput, tempSorted);
+        IOUtils.closeWhileHandlingException(reader, writer);
       }
+      
+      tempInput.delete();
+      tempSorted.delete();
     }
   }
 
@@ -910,7 +901,7 @@ public class AnalyzingSuggester extends Lookup {
 
     // TODO: we can optimize this somewhat by determinizing
     // while we convert
-    automaton = Operations.determinize(automaton);
+    automaton = Operations.determinize(automaton, DEFAULT_MAX_DETERMINIZED_STATES);
     return automaton;
   }
 

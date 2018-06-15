@@ -19,7 +19,6 @@ package org.apache.lucene.codecs.lucene3x;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.Collections;
 import java.util.Comparator;
 
 import org.apache.lucene.index.CorruptIndexException;
@@ -29,8 +28,6 @@ import org.apache.lucene.index.Term;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
-import org.apache.lucene.util.Accountable;
-import org.apache.lucene.util.Accountables;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.CloseableThreadLocal;
 import org.apache.lucene.util.DoubleBarrelLRUCache;
@@ -44,7 +41,7 @@ import org.apache.lucene.util.IOUtils;
  * @lucene.experimental
  */
 @Deprecated
-class TermInfosReader implements Accountable,Closeable {
+class TermInfosReader implements Closeable {
   private final Directory directory;
   private final String segment;
   private final FieldInfos fieldInfos;
@@ -362,22 +359,7 @@ class TermInfosReader implements Accountable,Closeable {
     return getThreadResources().termEnum.clone();
   }
 
-  @Override
-  public long ramBytesUsed() {
+  long ramBytesUsed() {
     return index == null ? 0 : index.ramBytesUsed();
-  }
-
-  @Override
-  public Iterable<? extends Accountable> getChildResources() {
-    if (index == null) {
-      return Collections.emptyList();
-    } else {
-      return Collections.singleton(Accountables.namedAccountable("term index", index));
-    }
-  }
-
-  @Override
-  public String toString() {
-    return "TermInfosReader(interval=" + totalIndexInterval + ",size=" + size + ")"; 
   }
 }

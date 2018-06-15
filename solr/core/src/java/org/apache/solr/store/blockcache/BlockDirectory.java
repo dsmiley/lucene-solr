@@ -23,7 +23,6 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.Set;
 
-import org.apache.lucene.index.IndexFileNames;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.IOContext;
@@ -237,6 +236,8 @@ public class BlockDirectory extends Directory {
       for (String file : files) {
         cache.delete(getFileCacheName(file));
       }
+      // segments.gen won't be removed above
+      cache.delete(dirName + "/" + "segments.gen");
       
     } catch (FileNotFoundException e) {
       // the local file system folder may be gone
@@ -341,9 +342,7 @@ public class BlockDirectory extends Directory {
    * file/context.
    */
   boolean useWriteCache(String name, IOContext context) {
-    if (!blockCacheWriteEnabled || name.startsWith(IndexFileNames.PENDING_SEGMENTS)) {
-      // for safety, don't bother caching pending commits.
-      // the cache does support renaming (renameCacheFile), but thats a scary optimization.
+    if (!blockCacheWriteEnabled) {
       return false;
     }
     if (blockCacheFileTypes != null && !isCachableFile(name)) {
@@ -380,11 +379,6 @@ public class BlockDirectory extends Directory {
     return directory.fileExists(name);
   }
   
-  @Override
-  public void renameFile(String source, String dest) throws IOException {
-    directory.renameFile(source, dest);
-  }
-
   public long fileLength(String name) throws IOException {
     return directory.fileLength(name);
   }

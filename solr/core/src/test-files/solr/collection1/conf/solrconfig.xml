@@ -50,7 +50,7 @@
     <str name="solr.hdfs.blockcache.global">${solr.hdfs.blockcache.global:false}</str>
   </directoryFactory>
 
-  <luceneMatchVersion>${tests.luceneMatchVersion:LATEST}</luceneMatchVersion>
+  <luceneMatchVersion>${tests.luceneMatchVersion:LUCENE_CURRENT}</luceneMatchVersion>
 
   <xi:include href="solrconfig.snippet.randomindexconfig.xml" xmlns:xi="http://www.w3.org/2001/XInclude"/>
 
@@ -482,6 +482,21 @@
     <lst name="defaults">
       <str name="echoParams">explicit</str>
       <str name="echoHandler">true</str>
+    </lst>
+  </requestHandler>
+
+  <requestHandler name="/search-facet-def" class="solr.SearchHandler" >
+    <lst name="defaults">
+      <str name="facet.field">foo_s</str>
+    </lst>
+    <lst name="appends">
+      <str name="facet.query">foo_s:bar</str>
+    </lst>
+  </requestHandler>
+  <requestHandler name="/search-facet-invariants" class="solr.SearchHandler" >
+    <lst name="invariants">
+      <str name="facet.field">foo_s</str>
+      <str name="facet.query">foo_s:bar</str>
     </lst>
   </requestHandler>
 

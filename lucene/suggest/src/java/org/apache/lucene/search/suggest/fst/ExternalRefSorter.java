@@ -20,7 +20,6 @@ package org.apache.lucene.search.suggest.fst;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.Comparator;
 
 import org.apache.lucene.util.BytesRef;
@@ -64,18 +63,9 @@ public class ExternalRefSorter implements BytesRefSorter, Closeable {
       
       sorted = File.createTempFile("RefSorter-", ".sorted",
           OfflineSorter.defaultTempDir());
-      boolean success = false;
-      try {
-        sort.sort(input, sorted);
-        success = true;
-      } finally {
-        if (success) {
-          Files.delete(input.toPath());
-        } else {
-          IOUtils.deleteFilesIgnoringExceptions(input);
-        }
-      }
+      sort.sort(input, sorted);
       
+      input.delete();
       input = null;
     }
     
@@ -95,16 +85,11 @@ public class ExternalRefSorter implements BytesRefSorter, Closeable {
    */
   @Override
   public void close() throws IOException {
-    boolean success = false;
     try {
       closeWriter();
-      success = true;
     } finally {
-      if (success) {
-        IOUtils.deleteFilesIfExist(input, sorted);
-      } else {
-        IOUtils.deleteFilesIgnoringExceptions(input, sorted);
-      }
+      if (input != null) input.delete();
+      if (sorted != null) sorted.delete();
     }
   }
   

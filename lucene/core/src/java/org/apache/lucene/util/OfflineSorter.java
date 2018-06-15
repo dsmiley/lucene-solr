@@ -31,7 +31,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -224,10 +223,10 @@ public final class OfflineSorter {
     sortInfo = new SortInfo();
     sortInfo.totalTime = System.currentTimeMillis();
 
-    Files.deleteIfExists(output.toPath());
+    output.delete();
 
     ArrayList<File> merges = new ArrayList<>();
-    boolean success3 = false;
+    boolean success2 = false;
     try {
       ByteSequencesReader is = new ByteSequencesReader(input);
       boolean success = false;
@@ -241,15 +240,11 @@ public final class OfflineSorter {
           // Handle intermediate merges.
           if (merges.size() == maxTempFiles) {
             File intermediate = File.createTempFile("sort", "intermediate", tempDirectory);
-            boolean success2 = false;
             try {
               mergePartitions(merges, intermediate);
-              success2 = true;
             } finally {
-              if (success2) {
-                IOUtils.deleteFilesIfExist(merges);
-              } else {
-                IOUtils.deleteFilesIgnoringExceptions(merges);
+              for (File file : merges) {
+                file.delete();
               }
               merges.clear();
               merges.add(intermediate);
@@ -277,13 +272,13 @@ public final class OfflineSorter {
         // otherwise merge the partitions with a priority queue.
         mergePartitions(merges, output);
       }
-      success3 = true;
+      success2 = true;
     } finally {
-      if (success3) {
-        IOUtils.deleteFilesIfExist(merges);
-      } else {
-        IOUtils.deleteFilesIgnoringExceptions(merges);
-        IOUtils.deleteFilesIgnoringExceptions(output);
+      for (File file : merges) {
+        file.delete();
+      }
+      if (!success2) {
+        output.delete();
       }
     }
 

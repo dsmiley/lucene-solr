@@ -31,6 +31,7 @@ import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexFileNames;
 import org.apache.lucene.index.IndexNotFoundException;
 import org.apache.lucene.index.IndexWriter;
+import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.replicator.ReplicationClient.ReplicationHandler;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IOContext;
@@ -109,7 +110,7 @@ public class IndexReplicationHandler implements ReplicationHandler {
     }
     
     String segmentsFile = files.remove(files.size() - 1);
-    if (!segmentsFile.startsWith(IndexFileNames.SEGMENTS) || segmentsFile.equals(IndexFileNames.OLD_SEGMENTS_GEN)) {
+    if (!segmentsFile.startsWith(IndexFileNames.SEGMENTS) || segmentsFile.equals(IndexFileNames.SEGMENTS_GEN)) {
       throw new IllegalStateException("last file to copy+sync must be segments_N but got " + segmentsFile
           + "; check your Revision implementation!");
     }
@@ -147,6 +148,7 @@ public class IndexReplicationHandler implements ReplicationHandler {
       if (commit != null && commit.getSegmentsFileName().equals(segmentsFile)) {
         Set<String> commitFiles = new HashSet<>();
         commitFiles.addAll(commit.getFileNames());
+        commitFiles.add(IndexFileNames.SEGMENTS_GEN);
         Matcher matcher = IndexFileNames.CODEC_FILE_PATTERN.matcher("");
         for (String file : dir.listAll()) {
           if (!commitFiles.contains(file)
@@ -175,6 +177,19 @@ public class IndexReplicationHandler implements ReplicationHandler {
       for (String file : files) {
         source.copy(target, file, file, IOContext.READONCE);
       }
+    }
+  }
+
+  /**
+   * Writes {@link IndexFileNames#SEGMENTS_GEN} file to the directory, reading
+   * the generation from the given {@code segmentsFile}. If it is {@code null},
+   * this method deletes segments.gen from the directory.
+   */
+  public static void writeSegmentsGen(String segmentsFile, Directory dir) {
+    if (segmentsFile != null) {
+      SegmentInfos.writeSegmentsGen(dir, SegmentInfos.generationFromSegmentsFileName(segmentsFile));
+    } else {
+      IOUtils.deleteFilesIgnoringExceptions(dir, IndexFileNames.SEGMENTS_GEN);
     }
   }
 
@@ -221,7 +236,6 @@ public class IndexReplicationHandler implements ReplicationHandler {
     Directory clientDir = sourceDirectory.values().iterator().next();
     List<String> files = copiedFiles.values().iterator().next();
     String segmentsFile = getSegmentsFile(files, false);
-    String pendingSegmentsFile = "pending_" + segmentsFile;
     
     boolean success = false;
     try {
@@ -231,16 +245,14 @@ public class IndexReplicationHandler implements ReplicationHandler {
       // fsync all copied files (except segmentsFile)
       indexDir.sync(files);
       
-      // now copy and fsync segmentsFile as pending, then rename (simulating lucene commit)
-      clientDir.copy(indexDir, segmentsFile, pendingSegmentsFile, IOContext.READONCE);
-      indexDir.sync(Collections.singletonList(pendingSegmentsFile));
-      indexDir.renameFile(pendingSegmentsFile, segmentsFile);
+      // now copy and fsync segmentsFile
+      clientDir.copy(indexDir, segmentsFile, segmentsFile, IOContext.READONCE);
+      indexDir.sync(Collections.singletonList(segmentsFile));
       
       success = true;
     } finally {
       if (!success) {
         files.add(segmentsFile); // add it back so it gets deleted too
-        files.add(pendingSegmentsFile);
         cleanupFilesOnFailure(indexDir, files);
       }
     }
@@ -253,6 +265,9 @@ public class IndexReplicationHandler implements ReplicationHandler {
       infoStream.message(INFO_STREAM_COMPONENT, "revisionReady(): currentVersion=" + currentVersion
           + " currentRevisionFiles=" + currentRevisionFiles);
     }
+
+    // update the segments.gen file
+    writeSegmentsGen(segmentsFile, indexDir);
     
     // Cleanup the index directory from old and unused index files.
     // NOTE: we don't use IndexWriter.deleteUnusedFiles here since it may have

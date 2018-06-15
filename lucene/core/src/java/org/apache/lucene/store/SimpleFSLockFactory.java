@@ -19,7 +19,6 @@ package org.apache.lucene.store;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 
 /**
  * <p>Implements {@link LockFactory} using {@link
@@ -103,7 +102,9 @@ public class SimpleFSLockFactory extends FSLockFactory {
         lockName = lockPrefix + "-" + lockName;
       }
       File lockFile = new File(lockDir, lockName);
-      Files.deleteIfExists(lockFile.toPath());
+      if (lockFile.exists() && !lockFile.delete()) {
+        throw new IOException("Cannot delete " + lockFile);
+      }
     }
   }
 }
@@ -146,11 +147,8 @@ class SimpleFSLock extends Lock {
 
   @Override
   public void close() throws LockReleaseFailedException {
-    // TODO: wierd that clearLock() throws the raw IOException...
-    try {
-      Files.deleteIfExists(lockFile.toPath());
-    } catch (Throwable cause) {
-      throw new LockReleaseFailedException("failed to delete " + lockFile, cause);
+    if (lockFile.exists() && !lockFile.delete()) {
+      throw new LockReleaseFailedException("failed to delete " + lockFile);
     }
   }
 

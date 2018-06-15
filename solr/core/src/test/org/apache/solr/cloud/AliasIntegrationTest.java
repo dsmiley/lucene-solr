@@ -29,8 +29,6 @@ import org.apache.solr.client.solrj.embedded.JettySolrRunner;
 import org.apache.solr.client.solrj.impl.CloudSolrServer;
 import org.apache.solr.client.solrj.impl.HttpSolrServer;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
-import org.apache.solr.client.solrj.request.CollectionAdminRequest.CreateAlias;
-import org.apache.solr.client.solrj.request.CollectionAdminRequest.DeleteAlias;
 import org.apache.solr.client.solrj.request.QueryRequest;
 import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.client.solrj.response.QueryResponse;
@@ -267,10 +265,7 @@ public class AliasIntegrationTest extends AbstractFullDistribZkTestBase {
       request.setPath("/admin/collections");
       server.request(request);
     } else {
-      CreateAlias request = new CreateAlias();
-      request.setCollectionName(alias);
-      request.setAliasedCollections(collections);
-      request.process(server);
+      CollectionAdminRequest.CreateAlias.createAlias(alias, collections, server);
     }
     server.shutdown();
   }
@@ -287,9 +282,7 @@ public class AliasIntegrationTest extends AbstractFullDistribZkTestBase {
       request.setPath("/admin/collections");
       server.request(request);
     } else {
-      DeleteAlias request = new DeleteAlias();
-      request.setCollectionName(alias);
-      request.process(server);
+      CollectionAdminRequest.deleteAlias(alias,server);
     }
     server.shutdown();
   }

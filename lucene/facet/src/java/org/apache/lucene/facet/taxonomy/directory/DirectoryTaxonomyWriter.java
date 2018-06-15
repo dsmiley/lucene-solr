@@ -9,7 +9,6 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -284,6 +283,7 @@ public class DirectoryTaxonomyWriter implements TaxonomyWriter {
     // TODO: should we use a more optimized Codec, e.g. Pulsing (or write custom)?
     // The taxonomy has a unique structure, where each term is associated with one document
 
+    // :Post-Release-Update-Version.LUCENE_XY:
     // Make sure we use a MergePolicy which always merges adjacent segments and thus
     // keeps the doc IDs ordered as well (this is crucial for the taxonomy index).
     return new IndexWriterConfig(Version.LUCENE_4_10_0,
@@ -944,7 +944,9 @@ public class DirectoryTaxonomyWriter implements TaxonomyWriter {
       in.close();
 
       // Delete the temporary file, which is no longer needed.
-      Files.delete(tmpfile.toPath());
+      if (!tmpfile.delete()) {
+        tmpfile.deleteOnExit();
+      }
 
       return map;
     }

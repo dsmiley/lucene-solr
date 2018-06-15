@@ -34,7 +34,6 @@ import org.junit.Test;
 import java.io.File;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
@@ -763,7 +762,7 @@ public class TestRecovery extends SolrTestCaseJ4 {
 
       String[] files = ulog.getLogList(logDir);
       for (String file : files) {
-        Files.delete(new File(logDir, file).toPath());
+        new File(logDir, file).delete();
       }
 
       assertEquals(0, ulog.getLogList(logDir).length);
@@ -1095,7 +1094,7 @@ public class TestRecovery extends SolrTestCaseJ4 {
     try {
       String[] files = ulog.getLogList(logDir);
       for (String file : files) {
-        Files.delete(new File(logDir, file).toPath());
+        new File(logDir, file).delete();
       }
 
       assertEquals(0, ulog.getLogList(logDir).length);

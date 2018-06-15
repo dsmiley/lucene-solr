@@ -160,9 +160,4 @@ public final class IntSequenceOutputs extends Outputs<IntsRef> {
   public long ramBytesUsed(IntsRef output) {
     return BASE_NUM_BYTES + RamUsageEstimator.sizeOf(output.ints);
   }
-  
-  @Override
-  public String toString() {
-    return "IntSequenceOutputs";
-  }
 }

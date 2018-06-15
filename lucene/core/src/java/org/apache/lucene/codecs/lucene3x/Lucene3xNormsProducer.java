@@ -25,19 +25,23 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.apache.lucene.codecs.NormsProducer;
+import org.apache.lucene.codecs.DocValuesProducer;
+import org.apache.lucene.index.BinaryDocValues;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.FieldInfos;
 import org.apache.lucene.index.IndexFileNames;
 import org.apache.lucene.index.NumericDocValues;
 import org.apache.lucene.index.SegmentInfo;
+import org.apache.lucene.index.SortedDocValues;
+import org.apache.lucene.index.SortedNumericDocValues;
+import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
-import org.apache.lucene.util.Accountable;
-import org.apache.lucene.util.Accountables;
+import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.RamUsageEstimator;
+import org.apache.lucene.util.StringHelper;
 import org.apache.lucene.util.Version;
 
 /**
@@ -46,7 +50,7 @@ import org.apache.lucene.util.Version;
  * @deprecated Only for reading existing 3.x indexes
  */
 @Deprecated
-class Lucene3xNormsProducer extends NormsProducer {
+class Lucene3xNormsProducer extends DocValuesProducer {
   
   /** norms header placeholder */
   static final byte[] NORMS_HEADER = new byte[]{'N','R','M',-1};
@@ -161,11 +165,10 @@ class Lucene3xNormsProducer extends NormsProducer {
 
   // holds a file+offset pointing to a norms, and lazy-loads it
   // to a singleton NumericDocValues instance
-  private class NormsDocValues implements Accountable {
+  private class NormsDocValues {
     private final IndexInput file;
     private final long offset;
     private NumericDocValues instance;
-    private final AtomicLong bytesUsed = new AtomicLong(-1);
     
     public NormsDocValues(IndexInput normInput, long normSeek) {
       this.file = normInput;
@@ -185,9 +188,7 @@ class Lucene3xNormsProducer extends NormsProducer {
           openFiles.remove(file);
           file.close();
         }
-        long ram = RamUsageEstimator.sizeOf(bytes);
-        ramBytesUsed.addAndGet(ram);
-        bytesUsed.addAndGet(ram);
+        ramBytesUsed.addAndGet(RamUsageEstimator.sizeOf(bytes));
         instance = new NumericDocValues() {
           @Override
           public long get(int docID) {
@@ -196,35 +197,39 @@ class Lucene3xNormsProducer extends NormsProducer {
         };
       }
       return instance;
-    }
-
-    @Override
-    public long ramBytesUsed() {
-      long v = bytesUsed.get();
-      return Math.max(v, 0);
-    }
-
-    @Override
-    public Iterable<? extends Accountable> getChildResources() {
-      long v = bytesUsed.get();
-      if (v < 0) {
-        return Collections.emptyList();
-      } else {
-        return Collections.singleton(Accountables.namedAccountable("byte array", v));
-      }
-    }
-
-    @Override
-    public String toString() {
-      return getClass().getSimpleName() + "(active=" + (bytesUsed.get() >= 0) + ")";
-    }
+    }    
   }
 
   @Override
-  public NumericDocValues getNorms(FieldInfo field) throws IOException {
+  public NumericDocValues getNumeric(FieldInfo field) throws IOException {
     NormsDocValues dv = norms.get(field.name);
     assert dv != null;
     return dv.getInstance();
+  }
+
+  @Override
+  public BinaryDocValues getBinary(FieldInfo field) throws IOException {
+    throw new AssertionError();
+  }
+
+  @Override
+  public SortedDocValues getSorted(FieldInfo field) throws IOException {
+    throw new AssertionError();
+  }
+  
+  @Override
+  public SortedSetDocValues getSortedSet(FieldInfo field) throws IOException {
+    throw new AssertionError();
+  }
+
+  @Override
+  public SortedNumericDocValues getSortedNumeric(FieldInfo field) throws IOException {
+    throw new AssertionError();
+  }
+
+  @Override
+  public Bits getDocsWithField(FieldInfo field) throws IOException {
+    throw new AssertionError();
   }
   
   @Override
@@ -234,14 +239,4 @@ class Lucene3xNormsProducer extends NormsProducer {
   
   @Override
   public void checkIntegrity() throws IOException {}
-
-  @Override
-  public Iterable<? extends Accountable> getChildResources() {
-    return Accountables.namedAccountables("field", norms);
-  }
-
-  @Override
-  public String toString() {
-    return getClass().getSimpleName() + "(fields=" + norms.size() + ")";
-  }
 }

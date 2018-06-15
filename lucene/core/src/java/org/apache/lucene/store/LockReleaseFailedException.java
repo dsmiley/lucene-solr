@@ -28,8 +28,4 @@ public class LockReleaseFailedException extends IOException {
   public LockReleaseFailedException(String message) {
     super(message);
   }
-  
-  public LockReleaseFailedException(String message, Throwable cause) {
-    super(message, cause);
-  }
 }

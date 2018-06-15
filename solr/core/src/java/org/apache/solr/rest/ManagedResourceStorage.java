@@ -29,7 +29,6 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Reader;
 import java.nio.charset.Charset;
-import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -183,21 +182,7 @@ public abstract class ManagedResourceStorage {
     @Override
     public boolean delete(String storedResourceId) throws IOException {
       File storedFile = new File(storageDir, storedResourceId);
-      return deleteIfFile(storedFile);
-    }
-    
-    // TODO: this interface should probably be changed, this simulates the old behavior,
-    // only throw security exception, just return false otherwise
-    private boolean deleteIfFile(File f) {
-      if (!f.isFile()) {
-        return false;
-      }
-      try {
-        Files.delete(f.toPath());
-        return true;
-      } catch (IOException cause) {
-        return false;
-      }
+      return storedFile.isFile() ? storedFile.delete() : false;
     }
 
     @Override

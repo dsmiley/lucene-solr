@@ -19,13 +19,10 @@ package org.apache.lucene.codecs.lucene3x;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
 import org.apache.lucene.index.Term;
-import org.apache.lucene.util.Accountable;
-import org.apache.lucene.util.Accountables;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
 import org.apache.lucene.util.MathUtil;
@@ -44,7 +41,7 @@ import org.apache.lucene.util.packed.PackedInts;
  * @deprecated Only for reading existing 3.x indexes
  */
 @Deprecated
-class TermInfosReaderIndex implements Accountable {
+class TermInfosReaderIndex {
 
   private static final int MAX_PAGE_BITS = 18; // 256 KB block
   private Term[] fields;
@@ -55,7 +52,6 @@ class TermInfosReaderIndex implements Accountable {
   private final int indexSize;
   private final int skipInterval;
   private final long ramBytesUsed;
-  private final long dataBytesUsed;
 
   /**
    * Loads the segment information at segment load time.
@@ -122,8 +118,7 @@ class TermInfosReaderIndex implements Accountable {
     long ramBytesUsed = RamUsageEstimator.shallowSizeOf(fields);
     ramBytesUsed += RamUsageEstimator.shallowSizeOf(dataInput);
     ramBytesUsed += fields.length * RamUsageEstimator.shallowSizeOfInstance(Term.class);
-    dataBytesUsed = dataPagedBytes.ramBytesUsed();
-    ramBytesUsed += dataBytesUsed;
+    ramBytesUsed += dataPagedBytes.ramBytesUsed();
     ramBytesUsed += indexToDataOffset.ramBytesUsed();
     this.ramBytesUsed = ramBytesUsed;
   }
@@ -269,21 +264,8 @@ class TermInfosReaderIndex implements Accountable {
     return term.field().compareTo(fields[input.readVInt()].field());
   }
 
-  @Override
-  public long ramBytesUsed() {
+  long ramBytesUsed() {
     return ramBytesUsed;
   }
 
-  @Override
-  public Iterable<? extends Accountable> getChildResources() {
-    List<Accountable> resources = new ArrayList<>();
-    resources.add(Accountables.namedAccountable("addresses", indexToDataOffset));
-    resources.add(Accountables.namedAccountable("term bytes", dataBytesUsed));
-    return Collections.unmodifiableList(resources);
-  }
-
-  @Override
-  public String toString() {
-    return getClass().getSimpleName() + "(indexterms=" + indexSize + ")";
-  }
 }

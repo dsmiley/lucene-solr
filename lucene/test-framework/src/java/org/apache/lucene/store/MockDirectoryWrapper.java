@@ -41,11 +41,9 @@ import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.NoDeletionPolicy;
 import org.apache.lucene.index.SegmentInfos;
-import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.TestUtil;
 import org.apache.lucene.util.ThrottledIndexOutput;
-import org.apache.lucene.util.Version;
 
 /**
  * This is a Directory Wrapper that adds methods
@@ -237,39 +235,6 @@ public class MockDirectoryWrapper extends BaseDirectoryWrapper {
       }
     } else {
       unSyncedFiles.removeAll(names);
-    }
-  }
-
-  @Override
-  public synchronized void renameFile(String source, String dest) throws IOException {
-    maybeYield();
-    maybeThrowDeterministicException();
-
-    if (crashed) {
-      throw new IOException("cannot rename after crash");
-    }
-    
-    if (openFiles.containsKey(source)) {
-      if (assertNoDeleteOpenFile) {
-        throw (AssertionError) fillOpenTrace(new AssertionError("MockDirectoryWrapper: file \"" + source + "\" is still open: cannot rename"), source, true);
-      } else if (noDeleteOpenFile) {
-        throw (IOException) fillOpenTrace(new IOException("MockDirectoryWrapper: file \"" + source + "\" is still open: cannot rename"), source, true);
-      }
-    }
-
-    boolean success = false;
-    try {
-      in.renameFile(source, dest);
-      success = true;
-    } finally {
-      if (success) {
-        // we don't do this stuff with lucene's commit, but its just for completeness
-        if (unSyncedFiles.contains(source)) {
-          unSyncedFiles.remove(source);
-          unSyncedFiles.add(dest);
-        }
-        openFilesDeleted.remove(source);
-      }
     }
   }
 
@@ -770,7 +735,7 @@ public class MockDirectoryWrapper extends BaseDirectoryWrapper {
           Set<String> allFiles = new HashSet<>(Arrays.asList(listAll()));
           allFiles.removeAll(pendingDeletions);
           String[] startFiles = allFiles.toArray(new String[0]);
-          IndexWriterConfig iwc = new IndexWriterConfig(Version.LATEST, null);
+          IndexWriterConfig iwc = new IndexWriterConfig(LuceneTestCase.TEST_VERSION_CURRENT, null);
           iwc.setIndexDeletionPolicy(NoDeletionPolicy.INSTANCE);
           new IndexWriter(in, iwc).rollback();
           String[] endFiles = in.listAll();
@@ -861,7 +826,7 @@ public class MockDirectoryWrapper extends BaseDirectoryWrapper {
           DirectoryReader ir1 = DirectoryReader.open(this);
           int numDocs1 = ir1.numDocs();
           ir1.close();
-          new IndexWriter(this, new IndexWriterConfig(Version.LATEST, null)).close();
+          new IndexWriter(this, new IndexWriterConfig(LuceneTestCase.TEST_VERSION_CURRENT, null)).close();
           DirectoryReader ir2 = DirectoryReader.open(this);
           int numDocs2 = ir2.numDocs();
           ir2.close();
@@ -954,15 +919,7 @@ public class MockDirectoryWrapper extends BaseDirectoryWrapper {
   synchronized void maybeThrowDeterministicException() throws IOException {
     if (failures != null) {
       for(int i = 0; i < failures.size(); i++) {
-        try {
-          failures.get(i).eval(this);
-        } catch (Throwable t) {
-          if (LuceneTestCase.VERBOSE) {
-            System.out.println("MockDirectoryWrapper: throw exc");
-            t.printStackTrace(System.out);
-          }
-          IOUtils.reThrow(t);
-        }
+        failures.get(i).eval(this);
       }
     }
   }

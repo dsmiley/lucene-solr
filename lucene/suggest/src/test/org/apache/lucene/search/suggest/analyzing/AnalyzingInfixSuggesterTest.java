@@ -39,11 +39,13 @@ import org.apache.lucene.analysis.util.CharArraySet;
 import org.apache.lucene.search.suggest.Input;
 import org.apache.lucene.search.suggest.InputArrayIterator;
 import org.apache.lucene.search.suggest.Lookup.LookupResult;
+import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.LuceneTestCase.SuppressCodecs;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.TestUtil;
+import org.junit.Test;
 
 // Test requires postings offsets:
 @SuppressCodecs({"Lucene3x","MockFixedIntBlock","MockVariableIntBlock","MockSep","MockRandom"})
@@ -56,34 +58,39 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
     };
 
     Analyzer a = new MockAnalyzer(random(), MockTokenizer.WHITESPACE, false);
-    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(newDirectory(), a, a, 3, false);
+    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newDirectory(), a, a, 3);
     suggester.build(new InputArrayIterator(keys));
 
     List<LookupResult> results = suggester.lookup(TestUtil.stringToCharSequence("ear", random()), 10, true, true);
     assertEquals(2, results.size());
-    assertEquals("a penny saved is a penny <b>ear</b>ned", results.get(0).key);
+    assertEquals("a penny saved is a penny earned", results.get(0).key);
+    assertEquals("a penny saved is a penny <b>ear</b>ned", results.get(0).highlightKey);
     assertEquals(10, results.get(0).value);
     assertEquals(new BytesRef("foobaz"), results.get(0).payload);
 
-    assertEquals("lend me your <b>ear</b>", results.get(1).key);
+    assertEquals("lend me your ear", results.get(1).key);
+    assertEquals("lend me your <b>ear</b>", results.get(1).highlightKey);
     assertEquals(8, results.get(1).value);
     assertEquals(new BytesRef("foobar"), results.get(1).payload);
 
     results = suggester.lookup(TestUtil.stringToCharSequence("ear ", random()), 10, true, true);
     assertEquals(1, results.size());
-    assertEquals("lend me your <b>ear</b>", results.get(0).key);
+    assertEquals("lend me your ear", results.get(0).key);
+    assertEquals("lend me your <b>ear</b>", results.get(0).highlightKey);
     assertEquals(8, results.get(0).value);
     assertEquals(new BytesRef("foobar"), results.get(0).payload);
 
     results = suggester.lookup(TestUtil.stringToCharSequence("pen", random()), 10, true, true);
     assertEquals(1, results.size());
-    assertEquals("a <b>pen</b>ny saved is a <b>pen</b>ny earned", results.get(0).key);
+    assertEquals("a penny saved is a penny earned", results.get(0).key);
+    assertEquals("a <b>pen</b>ny saved is a <b>pen</b>ny earned", results.get(0).highlightKey);
     assertEquals(10, results.get(0).value);
     assertEquals(new BytesRef("foobaz"), results.get(0).payload);
 
     results = suggester.lookup(TestUtil.stringToCharSequence("p", random()), 10, true, true);
     assertEquals(1, results.size());
-    assertEquals("a <b>p</b>enny saved is a <b>p</b>enny earned", results.get(0).key);
+    assertEquals("a penny saved is a penny earned", results.get(0).key);
+    assertEquals("a <b>p</b>enny saved is a <b>p</b>enny earned", results.get(0).highlightKey);
     assertEquals(10, results.get(0).value);
     assertEquals(new BytesRef("foobaz"), results.get(0).payload);
 
@@ -99,15 +106,16 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
     File tempDir = createTempDir("AnalyzingInfixSuggesterTest");
 
     Analyzer a = new MockAnalyzer(random(), MockTokenizer.WHITESPACE, false);
-    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(newFSDirectory(tempDir), a, a, 3, false);
+    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newFSDirectory(tempDir), a, a, 3);
     suggester.build(new InputArrayIterator(keys));
     assertEquals(2, suggester.getCount());
     suggester.close();
 
-    suggester = new AnalyzingInfixSuggester(newFSDirectory(tempDir), a, a, 3, false);
+    suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newFSDirectory(tempDir), a, a, 3);
     List<LookupResult> results = suggester.lookup(TestUtil.stringToCharSequence("ear", random()), 10, true, true);
     assertEquals(2, results.size());
-    assertEquals("a penny saved is a penny <b>ear</b>ned", results.get(0).key);
+    assertEquals("a penny saved is a penny earned", results.get(0).key);
+    assertEquals("a penny saved is a penny <b>ear</b>ned", results.get(0).highlightKey);
     assertEquals(10, results.get(0).value);
     assertEquals(new BytesRef("foobaz"), results.get(0).payload);
     assertEquals(2, suggester.getCount());
@@ -143,7 +151,7 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
     };
 
     Analyzer a = new MockAnalyzer(random(), MockTokenizer.WHITESPACE, false);
-    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(newDirectory(), a, a, 3, false) {
+    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newDirectory(), a, a, 3) {
         @Override
         protected Object highlight(String text, Set<String> matchedTokens, String prefixToken) throws IOException {
           TokenStream ts = queryAnalyzer.tokenStream("text", new StringReader(text));
@@ -222,7 +230,7 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
 
     Analyzer a = new MockAnalyzer(random(), MockTokenizer.WHITESPACE, false);
     int minPrefixLength = random().nextInt(10);
-    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(newFSDirectory(tempDir), a, a, minPrefixLength, false);
+    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newFSDirectory(tempDir), a, a, minPrefixLength);
     suggester.build(new InputArrayIterator(keys));
 
     for(int i=0;i<2;i++) {
@@ -231,16 +239,14 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
 
         List<LookupResult> results = suggester.lookup(TestUtil.stringToCharSequence("ear", random()), 10, true, doHighlight);
         assertEquals(2, results.size());
+        assertEquals("a penny saved is a penny earned", results.get(0).key);
         if (doHighlight) {
-          assertEquals("a penny saved is a penny <b>ear</b>ned", results.get(0).key);
-        } else {
-          assertEquals("a penny saved is a penny earned", results.get(0).key);
+          assertEquals("a penny saved is a penny <b>ear</b>ned", results.get(0).highlightKey);
         }
         assertEquals(10, results.get(0).value);
+        assertEquals("lend me your ear", results.get(1).key);
         if (doHighlight) {
-          assertEquals("lend me your <b>ear</b>", results.get(1).key);
-        } else {
-          assertEquals("lend me your ear", results.get(1).key);
+          assertEquals("lend me your <b>ear</b>", results.get(1).highlightKey);
         }
         assertEquals(new BytesRef("foobaz"), results.get(0).payload);
         assertEquals(8, results.get(1).value);
@@ -248,30 +254,27 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
 
         results = suggester.lookup(TestUtil.stringToCharSequence("ear ", random()), 10, true, doHighlight);
         assertEquals(1, results.size());
+        assertEquals("lend me your ear", results.get(0).key);
         if (doHighlight) {
-          assertEquals("lend me your <b>ear</b>", results.get(0).key);
-        } else {
-          assertEquals("lend me your ear", results.get(0).key);
+          assertEquals("lend me your <b>ear</b>", results.get(0).highlightKey);
         }
         assertEquals(8, results.get(0).value);
         assertEquals(new BytesRef("foobar"), results.get(0).payload);
 
         results = suggester.lookup(TestUtil.stringToCharSequence("pen", random()), 10, true, doHighlight);
         assertEquals(1, results.size());
+        assertEquals("a penny saved is a penny earned", results.get(0).key);
         if (doHighlight) {
-          assertEquals("a <b>pen</b>ny saved is a <b>pen</b>ny earned", results.get(0).key);
-        } else {
-          assertEquals("a penny saved is a penny earned", results.get(0).key);
+          assertEquals("a <b>pen</b>ny saved is a <b>pen</b>ny earned", results.get(0).highlightKey);
         }
         assertEquals(10, results.get(0).value);
         assertEquals(new BytesRef("foobaz"), results.get(0).payload);
 
         results = suggester.lookup(TestUtil.stringToCharSequence("p", random()), 10, true, doHighlight);
         assertEquals(1, results.size());
+        assertEquals("a penny saved is a penny earned", results.get(0).key);
         if (doHighlight) {
-          assertEquals("a <b>p</b>enny saved is a <b>p</b>enny earned", results.get(0).key);
-        } else {
-          assertEquals("a penny saved is a penny earned", results.get(0).key);
+          assertEquals("a <b>p</b>enny saved is a <b>p</b>enny earned", results.get(0).highlightKey);
         }
         assertEquals(10, results.get(0).value);
         assertEquals(new BytesRef("foobaz"), results.get(0).payload);
@@ -279,7 +282,7 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
 
       // Make sure things still work after close and reopen:
       suggester.close();
-      suggester = new AnalyzingInfixSuggester(newFSDirectory(tempDir), a, a, minPrefixLength, false);
+      suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newFSDirectory(tempDir), a, a, minPrefixLength);
     }
     suggester.close();
   }
@@ -290,11 +293,12 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
     };
 
     Analyzer a = new MockAnalyzer(random(), MockTokenizer.WHITESPACE, false);
-    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(newDirectory(), a, a, 3, false);
+    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newDirectory(), a, a, 3);
     suggester.build(new InputArrayIterator(keys));
     List<LookupResult> results = suggester.lookup(TestUtil.stringToCharSequence("penn", random()), 10, true, true);
     assertEquals(1, results.size());
-    assertEquals("a <b>penn</b>y saved is a <b>penn</b>y earned", results.get(0).key);
+    assertEquals("a penny saved is a penny earned", results.get(0).key);
+    assertEquals("a <b>penn</b>y saved is a <b>penn</b>y earned", results.get(0).highlightKey);
     suggester.close();
   }
 
@@ -304,16 +308,17 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
     };
 
     Analyzer a = new MockAnalyzer(random(), MockTokenizer.WHITESPACE, true);
-    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(newDirectory(), a, a, 3, false);
+    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newDirectory(), a, a, 3);
     suggester.build(new InputArrayIterator(keys));
     List<LookupResult> results = suggester.lookup(TestUtil.stringToCharSequence("penn", random()), 10, true, true);
     assertEquals(1, results.size());
-    assertEquals("a <b>Penn</b>y saved is a <b>penn</b>y earned", results.get(0).key);
+    assertEquals("a Penny saved is a penny earned", results.get(0).key);
+    assertEquals("a <b>Penn</b>y saved is a <b>penn</b>y earned", results.get(0).highlightKey);
     suggester.close();
 
     // Try again, but overriding addPrefixMatch to highlight
     // the entire hit:
-    suggester = new AnalyzingInfixSuggester(newDirectory(), a, a, 3, false) {
+    suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newDirectory(), a, a, 3) {
         @Override
         protected void addPrefixMatch(StringBuilder sb, String surface, String analyzed, String prefixToken) {
           sb.append("<b>");
@@ -324,7 +329,8 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
     suggester.build(new InputArrayIterator(keys));
     results = suggester.lookup(TestUtil.stringToCharSequence("penn", random()), 10, true, true);
     assertEquals(1, results.size());
-    assertEquals("a <b>Penny</b> saved is a <b>penny</b> earned", results.get(0).key);
+    assertEquals("a Penny saved is a penny earned", results.get(0).key);
+    assertEquals("a <b>Penny</b> saved is a <b>penny</b> earned", results.get(0).highlightKey);
     suggester.close();
   }
 
@@ -334,7 +340,7 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
     };
 
     Analyzer a = new MockAnalyzer(random(), MockTokenizer.WHITESPACE, false);
-    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(newDirectory(), a, a, 3, false);
+    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newDirectory(), a, a, 3);
     suggester.build(new InputArrayIterator(keys));
     suggester.close();
     suggester.close();
@@ -360,7 +366,7 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
         }
       };
 
-    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(newDirectory(), indexAnalyzer, queryAnalyzer, 3, false);
+    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newDirectory(), indexAnalyzer, queryAnalyzer, 3);
 
     Input keys[] = new Input[] {
       new Input("a bob for apples", 10, new BytesRef("foobaz")),
@@ -369,42 +375,48 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
     suggester.build(new InputArrayIterator(keys));
     List<LookupResult> results = suggester.lookup(TestUtil.stringToCharSequence("a", random()), 10, true, true);
     assertEquals(1, results.size());
-    assertEquals("a bob for <b>a</b>pples", results.get(0).key);
+    assertEquals("a bob for apples", results.get(0).key);
+    assertEquals("a bob for <b>a</b>pples", results.get(0).highlightKey);
     suggester.close();
   }
 
   public void testEmptyAtStart() throws Exception {
     Analyzer a = new MockAnalyzer(random(), MockTokenizer.WHITESPACE, false);
-    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(newDirectory(), a, a, 3, false);
+    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newDirectory(), a, a, 3);
     suggester.build(new InputArrayIterator(new Input[0]));
     suggester.add(new BytesRef("a penny saved is a penny earned"), null, 10, new BytesRef("foobaz"));
     suggester.add(new BytesRef("lend me your ear"), null, 8, new BytesRef("foobar"));
     suggester.refresh();
     List<LookupResult> results = suggester.lookup(TestUtil.stringToCharSequence("ear", random()), 10, true, true);
     assertEquals(2, results.size());
-    assertEquals("a penny saved is a penny <b>ear</b>ned", results.get(0).key);
+    assertEquals("a penny saved is a penny earned", results.get(0).key);
+    assertEquals("a penny saved is a penny <b>ear</b>ned", results.get(0).highlightKey);
     assertEquals(10, results.get(0).value);
     assertEquals(new BytesRef("foobaz"), results.get(0).payload);
 
-    assertEquals("lend me your <b>ear</b>", results.get(1).key);
+    assertEquals("lend me your ear", results.get(1).key);
+    assertEquals("lend me your <b>ear</b>", results.get(1).highlightKey);
     assertEquals(8, results.get(1).value);
     assertEquals(new BytesRef("foobar"), results.get(1).payload);
 
     results = suggester.lookup(TestUtil.stringToCharSequence("ear ", random()), 10, true, true);
     assertEquals(1, results.size());
-    assertEquals("lend me your <b>ear</b>", results.get(0).key);
+    assertEquals("lend me your ear", results.get(0).key);
+    assertEquals("lend me your <b>ear</b>", results.get(0).highlightKey);
     assertEquals(8, results.get(0).value);
     assertEquals(new BytesRef("foobar"), results.get(0).payload);
 
     results = suggester.lookup(TestUtil.stringToCharSequence("pen", random()), 10, true, true);
     assertEquals(1, results.size());
-    assertEquals("a <b>pen</b>ny saved is a <b>pen</b>ny earned", results.get(0).key);
+    assertEquals("a penny saved is a penny earned", results.get(0).key);
+    assertEquals("a <b>pen</b>ny saved is a <b>pen</b>ny earned", results.get(0).highlightKey);
     assertEquals(10, results.get(0).value);
     assertEquals(new BytesRef("foobaz"), results.get(0).payload);
 
     results = suggester.lookup(TestUtil.stringToCharSequence("p", random()), 10, true, true);
     assertEquals(1, results.size());
-    assertEquals("a <b>p</b>enny saved is a <b>p</b>enny earned", results.get(0).key);
+    assertEquals("a penny saved is a penny earned", results.get(0).key);
+    assertEquals("a <b>p</b>enny saved is a <b>p</b>enny earned", results.get(0).highlightKey);
     assertEquals(10, results.get(0).value);
     assertEquals(new BytesRef("foobaz"), results.get(0).payload);
 
@@ -413,14 +425,15 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
 
   public void testBothExactAndPrefix() throws Exception {
     Analyzer a = new MockAnalyzer(random(), MockTokenizer.WHITESPACE, false);
-    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(newDirectory(), a, a, 3, false);
+    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newDirectory(), a, a, 3);
     suggester.build(new InputArrayIterator(new Input[0]));
     suggester.add(new BytesRef("the pen is pretty"), null, 10, new BytesRef("foobaz"));
     suggester.refresh();
 
     List<LookupResult> results = suggester.lookup(TestUtil.stringToCharSequence("pen p", random()), 10, true, true);
     assertEquals(1, results.size());
-    assertEquals("the <b>pen</b> is <b>p</b>retty", results.get(0).key);
+    assertEquals("the pen is pretty", results.get(0).key);
+    assertEquals("the <b>pen</b> is <b>p</b>retty", results.get(0).highlightKey);
     assertEquals(10, results.get(0).value);
     assertEquals(new BytesRef("foobaz"), results.get(0).payload);
     suggester.close();
@@ -486,7 +499,7 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
       System.out.println("  minPrefixChars=" + minPrefixChars);
     }
 
-    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(newFSDirectory(tempDir), a, a, minPrefixChars, false);
+    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newFSDirectory(tempDir), a, a, minPrefixChars);
 
     // Initial suggester built with nothing:
     suggester.build(new InputArrayIterator(new Input[0]));
@@ -566,7 +579,7 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
         }
         lookupThread.finish();
         suggester.close();
-        suggester = new AnalyzingInfixSuggester(newFSDirectory(tempDir), a, a, minPrefixChars, false);
+        suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newFSDirectory(tempDir), a, a, minPrefixChars);
         lookupThread = new LookupThread(suggester);
         lookupThread.start();
 
@@ -675,7 +688,11 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
 
           assertEquals(expectedCount, actual.size());
           for(int i=0;i<expectedCount;i++) {
-            assertEquals(expected.get(i).term.utf8ToString(), actual.get(i).key.toString());
+            if (doHilite) {
+              assertEquals(expected.get(i).term.utf8ToString(), actual.get(i).highlightKey);
+            } else {
+              assertEquals(expected.get(i).term.utf8ToString(), actual.get(i).key);
+            }
             assertEquals(expected.get(i).v, actual.get(i).value);
             assertEquals(expected.get(i).payload, actual.get(i).payload);
           }
@@ -738,12 +755,13 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
     };
 
     Analyzer a = new MockAnalyzer(random(), MockTokenizer.WHITESPACE, false);
-    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(newDirectory(), a, a, 3, false);
+    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newDirectory(), a, a, 3);
     suggester.build(new InputArrayIterator(keys));
 
     List<LookupResult> results = suggester.lookup(TestUtil.stringToCharSequence("ear", random()), 10, true, true);
     assertEquals(1, results.size());
-    assertEquals("lend me your <b>ear</b>", results.get(0).key);
+    assertEquals("lend me your ear", results.get(0).key);
+    assertEquals("lend me your <b>ear</b>", results.get(0).highlightKey);
     assertEquals(8, results.get(0).value);
     assertEquals(new BytesRef("foobar"), results.get(0).payload);
 
@@ -755,29 +773,34 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
 
     results = suggester.lookup(TestUtil.stringToCharSequence("ear", random()), 10, true, true);
     assertEquals(2, results.size());
-    assertEquals("a penny saved is a penny <b>ear</b>ned", results.get(0).key);
+    assertEquals("a penny saved is a penny earned", results.get(0).key);
+    assertEquals("a penny saved is a penny <b>ear</b>ned", results.get(0).highlightKey);
     assertEquals(10, results.get(0).value);
     assertEquals(new BytesRef("foobaz"), results.get(0).payload);
 
-    assertEquals("lend me your <b>ear</b>", results.get(1).key);
+    assertEquals("lend me your ear", results.get(1).key);
+    assertEquals("lend me your <b>ear</b>", results.get(1).highlightKey);
     assertEquals(8, results.get(1).value);
     assertEquals(new BytesRef("foobar"), results.get(1).payload);
 
     results = suggester.lookup(TestUtil.stringToCharSequence("ear ", random()), 10, true, true);
     assertEquals(1, results.size());
-    assertEquals("lend me your <b>ear</b>", results.get(0).key);
+    assertEquals("lend me your ear", results.get(0).key);
+    assertEquals("lend me your <b>ear</b>", results.get(0).highlightKey);
     assertEquals(8, results.get(0).value);
     assertEquals(new BytesRef("foobar"), results.get(0).payload);
 
     results = suggester.lookup(TestUtil.stringToCharSequence("pen", random()), 10, true, true);
     assertEquals(1, results.size());
-    assertEquals("a <b>pen</b>ny saved is a <b>pen</b>ny earned", results.get(0).key);
+    assertEquals("a penny saved is a penny earned", results.get(0).key);
+    assertEquals("a <b>pen</b>ny saved is a <b>pen</b>ny earned", results.get(0).highlightKey);
     assertEquals(10, results.get(0).value);
     assertEquals(new BytesRef("foobaz"), results.get(0).payload);
 
     results = suggester.lookup(TestUtil.stringToCharSequence("p", random()), 10, true, true);
     assertEquals(1, results.size());
-    assertEquals("a <b>p</b>enny saved is a <b>p</b>enny earned", results.get(0).key);
+    assertEquals("a penny saved is a penny earned", results.get(0).key);
+    assertEquals("a <b>p</b>enny saved is a <b>p</b>enny earned", results.get(0).highlightKey);
     assertEquals(10, results.get(0).value);
     assertEquals(new BytesRef("foobaz"), results.get(0).payload);
 
@@ -789,72 +812,15 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
 
     results = suggester.lookup(TestUtil.stringToCharSequence("ear", random()), 10, true, true);
     assertEquals(2, results.size());
-    assertEquals("lend me your <b>ear</b>", results.get(0).key);
+    assertEquals("lend me your ear", results.get(0).key);
+    assertEquals("lend me your <b>ear</b>", results.get(0).highlightKey);
     assertEquals(12, results.get(0).value);
     assertEquals(new BytesRef("foobox"), results.get(0).payload);
-    assertEquals("a penny saved is a penny <b>ear</b>ned", results.get(1).key);
+    assertEquals("a penny saved is a penny earned", results.get(1).key);
+    assertEquals("a penny saved is a penny <b>ear</b>ned", results.get(1).highlightKey);
     assertEquals(10, results.get(1).value);
     assertEquals(new BytesRef("foobaz"), results.get(1).payload);
     suggester.close();
-  }
-
-  public void testNRTWithParallelAdds() throws IOException, InterruptedException {
-    String[] keys = new String[] {"python", "java", "c", "scala", "ruby", "clojure", "erlang", "go", "swift", "lisp"};
-    Analyzer a = new MockAnalyzer(random(), MockTokenizer.WHITESPACE, false);
-    File tempDir = createTempDir("AIS_NRT_PERSIST_TEST");
-    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(newFSDirectory(tempDir), a, a, 3, false);
-    Thread[] multiAddThreads = new Thread[10];
-    try {
-      suggester.refresh();
-      fail("Cannot call refresh on an suggester when no docs are added to the index");
-    } catch(IllegalStateException e) {
-      //Expected
-    }
-    for(int i=0; i<10; i++) {
-      multiAddThreads[i] = new Thread(new IndexDocument(suggester, keys[i]));
-    }
-    for(int i=0; i<10; i++) {
-      multiAddThreads[i].start();
-    }
-    //Make sure all threads have completed indexing
-    for(int i=0; i<10; i++) {
-      multiAddThreads[i].join();
-    }
-
-    suggester.refresh();
-    List<LookupResult> results = suggester.lookup(TestUtil.stringToCharSequence("python", random()), 10, true, false);
-    assertEquals(1, results.size());
-    assertEquals("python", results.get(0).key);
-
-    //Test if the index is getting persisted correctly and can be reopened.
-    suggester.commit();
-    suggester.close();
-
-    suggester = new AnalyzingInfixSuggester(newFSDirectory(tempDir), a, a, 3, false);
-    results = suggester.lookup(TestUtil.stringToCharSequence("python", random()), 10, true, false);
-    assertEquals(1, results.size());
-    assertEquals("python", results.get(0).key);
-
-    suggester.close();
-  }
-
-  private class IndexDocument implements Runnable {
-    AnalyzingInfixSuggester suggester;
-    String key;
-
-    private IndexDocument(AnalyzingInfixSuggester suggester, String key) {
-      this.suggester = suggester;
-      this.key = key;
-    }
-
-    @Override
-    public void run() {
-      try {
-        suggester.add(new BytesRef(key), null, 10, null);
-      } catch (IOException e) {
-        fail("Could not build suggest dictionary correctly");
-      }
-    }
   }
 
   private Set<BytesRef> asSet(String... values) {
@@ -879,18 +845,19 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
       AnalyzingInfixSuggester suggester;
       Analyzer a = new MockAnalyzer(random(), MockTokenizer.WHITESPACE, false);
       if (iter == 0) {
-        suggester = new AnalyzingInfixSuggester(newFSDirectory(tempDir), a, a, 3, false);
+        suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newFSDirectory(tempDir), a, a, 3);
         suggester.build(new InputArrayIterator(keys));
       } else {
         // Test again, after close/reopen:
-        suggester = new AnalyzingInfixSuggester(newFSDirectory(tempDir), a, a, 3, false);
+        suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, newFSDirectory(tempDir), a, a, 3);
       }
 
       // No context provided, all results returned
       List<LookupResult> results = suggester.lookup(TestUtil.stringToCharSequence("ear", random()), 10, true, true);
       assertEquals(2, results.size());
       LookupResult result = results.get(0);
-      assertEquals("a penny saved is a penny <b>ear</b>ned", result.key);
+      assertEquals("a penny saved is a penny earned", result.key);
+      assertEquals("a penny saved is a penny <b>ear</b>ned", result.highlightKey);
       assertEquals(10, result.value);
       assertEquals(new BytesRef("foobaz"), result.payload);
       assertNotNull(result.contexts);
@@ -899,7 +866,8 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
       assertTrue(result.contexts.contains(new BytesRef("baz")));
 
       result = results.get(1);
-      assertEquals("lend me your <b>ear</b>", result.key);
+      assertEquals("lend me your ear", result.key);
+      assertEquals("lend me your <b>ear</b>", result.highlightKey);
       assertEquals(8, result.value);
       assertEquals(new BytesRef("foobar"), result.payload);
       assertNotNull(result.contexts);
@@ -912,7 +880,8 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
       assertEquals(2, results.size());
 
       result = results.get(0);
-      assertEquals("a penny saved is a penny <b>ear</b>ned", result.key);
+      assertEquals("a penny saved is a penny earned", result.key);
+      assertEquals("a penny saved is a penny <b>ear</b>ned", result.highlightKey);
       assertEquals(10, result.value);
       assertEquals(new BytesRef("foobaz"), result.payload);
       assertNotNull(result.contexts);
@@ -921,7 +890,8 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
       assertTrue(result.contexts.contains(new BytesRef("baz")));
 
       result = results.get(1);
-      assertEquals("lend me your <b>ear</b>", result.key);
+      assertEquals("lend me your ear", result.key);
+      assertEquals("lend me your <b>ear</b>", result.highlightKey);
       assertEquals(8, result.value);
       assertEquals(new BytesRef("foobar"), result.payload);
       assertNotNull(result.contexts);
@@ -934,7 +904,8 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
       assertEquals(1, results.size());
 
       result = results.get(0);
-      assertEquals("lend me your <b>ear</b>", result.key);
+      assertEquals("lend me your ear", result.key);
+      assertEquals("lend me your <b>ear</b>", result.highlightKey);
       assertEquals(8, result.value);
       assertEquals(new BytesRef("foobar"), result.payload);
       assertNotNull(result.contexts);
@@ -947,7 +918,8 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
       assertEquals(1, results.size());
 
       result = results.get(0);
-      assertEquals("a penny saved is a penny <b>ear</b>ned", result.key);
+      assertEquals("a penny saved is a penny earned", result.key);
+      assertEquals("a penny saved is a penny <b>ear</b>ned", result.highlightKey);
       assertEquals(10, result.value);
       assertEquals(new BytesRef("foobaz"), result.payload);
       assertNotNull(result.contexts);
@@ -960,7 +932,8 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
       assertEquals(2, results.size());
 
       result = results.get(0);
-      assertEquals("a penny saved is a penny <b>ear</b>ned", result.key);
+      assertEquals("a penny saved is a penny earned", result.key);
+      assertEquals("a penny saved is a penny <b>ear</b>ned", result.highlightKey);
       assertEquals(10, result.value);
       assertEquals(new BytesRef("foobaz"), result.payload);
       assertNotNull(result.contexts);
@@ -969,7 +942,8 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
       assertTrue(result.contexts.contains(new BytesRef("baz")));
 
       result = results.get(1);
-      assertEquals("lend me your <b>ear</b>", result.key);
+      assertEquals("lend me your ear", result.key);
+      assertEquals("lend me your <b>ear</b>", result.highlightKey);
       assertEquals(8, result.value);
       assertEquals(new BytesRef("foobar"), result.payload);
       assertNotNull(result.contexts);
@@ -980,4 +954,28 @@ public class AnalyzingInfixSuggesterTest extends LuceneTestCase {
       suggester.close();
     }
   }
+
+  @Test
+  public void testAddPrefixMatch() throws IOException {
+    Analyzer a = new MockAnalyzer(random(), MockTokenizer.WHITESPACE, false);
+    Directory dir = newDirectory();
+    AnalyzingInfixSuggester suggester = new AnalyzingInfixSuggester(TEST_VERSION_CURRENT, dir, a);
+
+    assertEquals("<b>Sol</b>r", pfmToString(suggester, "Solr", "Sol"));
+    assertEquals("<b>Solr</b>", pfmToString(suggester, "Solr", "Solr"));
+
+    // Test SOLR-6085 - the analyzed tokens match due to ss->ß normalization
+    assertEquals("<b>daß</b>", pfmToString(suggester, "daß", "dass"));
+
+    dir.close();
+    suggester.close();
+  }
+
+  private String pfmToString(AnalyzingInfixSuggester suggester, String surface, String prefix) throws IOException {
+    StringBuilder sb = new StringBuilder();
+    suggester.addPrefixMatch(sb, surface, "", prefix);
+    return sb.toString();
+  }
+
+
 }

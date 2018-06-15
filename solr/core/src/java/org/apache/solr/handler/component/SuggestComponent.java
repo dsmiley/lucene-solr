@@ -33,7 +33,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.apache.lucene.search.suggest.Lookup;
 import org.apache.lucene.search.suggest.Lookup.LookupResult;
 import org.apache.lucene.util.Accountable;
-import org.apache.lucene.util.Accountables;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.CharsRef;
 import org.apache.solr.common.SolrException;
@@ -344,11 +343,6 @@ public class SuggestComponent extends SearchComponent implements SolrCoreAware, 
       sizeInBytes += suggester.ramBytesUsed();
     }
     return sizeInBytes;
-  }
-  
-  @Override
-  public Iterable<? extends Accountable> getChildResources() {
-    return Accountables.namedAccountables("field", suggesters);
   }
   
   private Set<SolrSuggester> getSuggesters(SolrParams params) {

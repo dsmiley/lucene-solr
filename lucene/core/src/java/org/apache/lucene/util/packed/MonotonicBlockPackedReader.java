@@ -24,7 +24,6 @@ import static org.apache.lucene.util.packed.PackedInts.checkBlockSize;
 import static org.apache.lucene.util.packed.PackedInts.numBlocks;
 
 import java.io.IOException;
-import java.util.Collections;
 
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.util.Accountable;
@@ -47,7 +46,6 @@ public class MonotonicBlockPackedReader extends LongValues implements Accountabl
   final long[] minValues;
   final float[] averages;
   final PackedInts.Reader[] subReaders;
-  final long sumBPV;
 
   /** Sole constructor. */
   public static MonotonicBlockPackedReader of(IndexInput in, int packedIntsVersion, int blockSize, long valueCount, boolean direct) throws IOException {
@@ -70,7 +68,6 @@ public class MonotonicBlockPackedReader extends LongValues implements Accountabl
     minValues = new long[numBlocks];
     averages = new float[numBlocks];
     subReaders = new PackedInts.Reader[numBlocks];
-    long sumBPV = 0;
     for (int i = 0; i < numBlocks; ++i) {
       if (packedIntsVersion < PackedInts.VERSION_MONOTONIC_WITHOUT_ZIGZAG) {
         minValues[i] = in.readVLong();
@@ -79,7 +76,6 @@ public class MonotonicBlockPackedReader extends LongValues implements Accountabl
       }
       averages[i] = Float.intBitsToFloat(in.readInt());
       final int bitsPerValue = in.readVInt();
-      sumBPV += bitsPerValue;
       if (bitsPerValue > 64) {
         throw new IOException("Corrupted");
       }
@@ -96,7 +92,6 @@ public class MonotonicBlockPackedReader extends LongValues implements Accountabl
         }
       }
     }
-    this.sumBPV = sumBPV;
   }
 
   @Override
@@ -126,15 +121,5 @@ public class MonotonicBlockPackedReader extends LongValues implements Accountabl
     }
     return sizeInBytes;
   }
-  
-  @Override
-  public Iterable<? extends Accountable> getChildResources() {
-    return Collections.emptyList();
-  }
-  
-  @Override
-  public String toString() {
-    long avgBPV = subReaders.length == 0 ? 0 : sumBPV / subReaders.length;
-    return getClass().getSimpleName() + "(blocksize=" + (1<<blockShift) + ",size=" + valueCount + ",avgBPV=" + avgBPV + ")";
-  }
+
 }

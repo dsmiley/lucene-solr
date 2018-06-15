@@ -20,7 +20,6 @@ package org.apache.lucene.index;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.util.Collection;
 import java.util.HashSet;
@@ -44,7 +43,6 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.NoSuchDirectoryException;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.TestUtil;
 import org.junit.Assume;
@@ -450,7 +448,7 @@ public void testFilesOpenClose() throws IOException {
       dir.close();
 
       // Try to erase the data - this ensures that the writer closed all files
-      IOUtils.rm(dirFile);
+      TestUtil.rm(dirFile);
       dir = newFSDirectory(dirFile);
 
       // Now create the data set again, just as before
@@ -468,7 +466,7 @@ public void testFilesOpenClose() throws IOException {
 
       // The following will fail if reader did not close
       // all files
-      IOUtils.rm(dirFile);
+      TestUtil.rm(dirFile);
   }
 
   public void testOpenReaderAfterDelete() throws IOException {
@@ -481,7 +479,7 @@ public void testFilesOpenClose() throws IOException {
       // expected
     }
 
-    Files.delete(dirFile.toPath());
+    dirFile.delete();
 
     // Make sure we still get a CorruptIndexException (not NPE):
     try {
@@ -720,7 +718,7 @@ public void testFilesOpenClose() throws IOException {
   // good exception
   public void testNoDir() throws Throwable {
     File tempDir = createTempDir("doesnotexist");
-    IOUtils.rm(tempDir);
+    TestUtil.rm(tempDir);
     Directory dir = newFSDirectory(tempDir);
     try {
       DirectoryReader.open(dir);
@@ -1197,7 +1195,7 @@ public void testFilesOpenClose() throws IOException {
 
   public void testIndexExistsOnNonExistentDirectory() throws Exception {
     File tempDir = createTempDir("testIndexExistsOnNonExistentDirectory");
-    Files.delete(tempDir.toPath());
+    tempDir.delete();
     Directory dir = newFSDirectory(tempDir);
     System.out.println("dir=" + dir);
     assertFalse(DirectoryReader.indexExists(dir));

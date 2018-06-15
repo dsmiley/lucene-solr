@@ -19,7 +19,6 @@ package org.apache.lucene.search;
 
 import java.io.IOException;
 
-import org.apache.lucene.util.Accountable;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.RamUsageEstimator;
 
@@ -62,11 +61,6 @@ public abstract class FilteredDocIdSet extends DocIdSet {
   @Override
   public long ramBytesUsed() {
     return RamUsageEstimator.NUM_BYTES_OBJECT_REF + _innerSet.ramBytesUsed();
-  }
-  
-  @Override
-  public Iterable<? extends Accountable> getChildResources() {
-    return _innerSet.getChildResources();
   }
 
   @Override

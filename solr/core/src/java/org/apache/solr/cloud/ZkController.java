@@ -24,12 +24,14 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.URLEncoder;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -49,22 +51,19 @@ import org.apache.solr.common.cloud.BeforeReconnect;
 import org.apache.solr.common.cloud.ClusterState;
 import org.apache.solr.common.cloud.ClusterStateUtil;
 import org.apache.solr.common.cloud.DefaultConnectionStrategy;
-import org.apache.solr.common.cloud.DefaultZkACLProvider;
-import org.apache.solr.common.cloud.DefaultZkCredentialsProvider;
 import org.apache.solr.common.cloud.DocCollection;
 import org.apache.solr.common.cloud.OnReconnect;
 import org.apache.solr.common.cloud.Replica;
 import org.apache.solr.common.cloud.Slice;
 import org.apache.solr.common.cloud.SolrZkClient;
-import org.apache.solr.common.cloud.ZkACLProvider;
 import org.apache.solr.common.cloud.ZkCmdExecutor;
 import org.apache.solr.common.cloud.ZkCoreNodeProps;
-import org.apache.solr.common.cloud.ZkCredentialsProvider;
 import org.apache.solr.common.cloud.ZkNodeProps;
 import org.apache.solr.common.cloud.ZkStateReader;
 import org.apache.solr.common.cloud.ZooKeeperException;
 import org.apache.solr.common.params.CollectionParams;
 import org.apache.solr.common.params.SolrParams;
+import org.apache.solr.common.util.ByteUtils;
 import org.apache.solr.common.util.URLUtil;
 import org.apache.solr.core.CoreContainer;
 import org.apache.solr.core.CoreDescriptor;
@@ -78,6 +77,9 @@ import org.apache.zookeeper.KeeperException.ConnectionLossException;
 import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.KeeperException.SessionExpiredException;
 import org.apache.zookeeper.data.Stat;
+import org.noggit.CharArr;
+import org.noggit.JSONParser;
+import org.noggit.ObjectBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -216,24 +218,8 @@ public final class ZkController {
     this.leaderConflictResolveWait = leaderConflictResolveWait;
     
     this.clientTimeout = zkClientTimeout;
-    DefaultConnectionStrategy strat = new DefaultConnectionStrategy();
-    String zkACLProviderClass = cc.getConfig().getZkACLProviderClass();
-    ZkACLProvider zkACLProvider = null;
-    if (zkACLProviderClass != null && zkACLProviderClass.trim().length() > 0) {
-      zkACLProvider  = cc.getResourceLoader().newInstance(zkACLProviderClass, ZkACLProvider.class);
-    } else {
-      zkACLProvider = new DefaultZkACLProvider();
-    }
-    
-    String zkCredentialProviderClass = cc.getConfig().getZkCredentialProviderClass();
-    if (zkCredentialProviderClass != null && zkCredentialProviderClass.trim().length() > 0) {
-      strat.setZkCredentialsToAddAutomatically(cc.getResourceLoader().newInstance(zkCredentialProviderClass, ZkCredentialsProvider.class));
-    } else {
-      strat.setZkCredentialsToAddAutomatically(new DefaultZkCredentialsProvider());
-    }
-    
     zkClient = new SolrZkClient(zkServerAddress, zkClientTimeout,
-        zkClientConnectTimeout, strat,
+        zkClientConnectTimeout, new DefaultConnectionStrategy(),
         // on reconnect, reload cloud info
         new OnReconnect() {
           
@@ -318,7 +304,7 @@ public final class ZkController {
             }
             markAllAsNotLeader(registerOnReconnect);
           }
-        }, zkACLProvider);
+        });
     
     this.overseerJobQueue = Overseer.getInQueue(zkClient);
     this.overseerCollectionQueue = Overseer.getCollectionQueue(zkClient);
@@ -566,7 +552,8 @@ public final class ZkController {
 
     try {
       boolean createdWatchesAndUpdated = false;
-      if (zkClient.exists(ZkStateReader.LIVE_NODES_ZKNODE, true)) {
+      Stat stat = zkClient.exists(ZkStateReader.LIVE_NODES_ZKNODE, null, true);
+      if (stat!= null && stat.getNumChildren()>0) {
         zkStateReader.createClusterStateWatchersAndUpdate();
         createdWatchesAndUpdated = true;
         publishAndWaitForDownStates();
@@ -696,14 +683,13 @@ public final class ZkController {
    */
   public static boolean checkChrootPath(String zkHost, boolean create)
       throws KeeperException, InterruptedException {
-    if (!SolrZkClient.containsChroot(zkHost)) {
+    if (!containsChroot(zkHost)) {
       return true;
     }
     log.info("zkHost includes chroot");
     String chrootPath = zkHost.substring(zkHost.indexOf("/"), zkHost.length());
-
     SolrZkClient tmpClient = new SolrZkClient(zkHost.substring(0,
-        zkHost.indexOf("/")), 60000, 30000, null, null, null);
+        zkHost.indexOf("/")), 60 * 1000);
     boolean exists = tmpClient.exists(chrootPath, true);
     if (!exists && create) {
       tmpClient.makePath(chrootPath, false, true);
@@ -712,6 +698,14 @@ public final class ZkController {
     tmpClient.close();
     return exists;
   }
+
+  /**
+   * Validates if zkHost contains a chroot. See http://zookeeper.apache.org/doc/r3.2.2/zookeeperProgrammers.html#ch_zkSessions
+   */
+  private static boolean containsChroot(String zkHost) {
+    return zkHost.contains("/");
+  }
+
 
   public boolean isConnected() {
     return zkClient.isConnected();
@@ -1167,7 +1161,7 @@ public final class ZkController {
     CloudDescriptor cloudDescriptor = cd.getCloudDescriptor();
     
     ZkNodeProps m = new ZkNodeProps(Overseer.QUEUE_OPERATION,
-        Overseer.OverseerAction.DELETECORE.toLower(), ZkStateReader.CORE_NAME_PROP, coreName,
+        Overseer.DELETECORE, ZkStateReader.CORE_NAME_PROP, coreName,
         ZkStateReader.NODE_NAME_PROP, getNodeName(),
         ZkStateReader.COLLECTION_PROP, cloudDescriptor.getCollectionName(),
         ZkStateReader.CORE_NODE_NAME_PROP, coreNodeName);
@@ -1177,7 +1171,7 @@ public final class ZkController {
   public void createCollection(String collection) throws KeeperException,
       InterruptedException {
     ZkNodeProps m = new ZkNodeProps(Overseer.QUEUE_OPERATION,
-        CollectionParams.CollectionAction.CREATE.toLower(), ZkStateReader.NODE_NAME_PROP, getNodeName(),
+        "createcollection", ZkStateReader.NODE_NAME_PROP, getNodeName(),
         ZkStateReader.COLLECTION_PROP, collection);
     overseerJobQueue.offer(ZkStateReader.toJSON(m));
   }
@@ -1897,16 +1891,19 @@ public final class ZkController {
   }  
   
   public String getLeaderInitiatedRecoveryState(String collection, String shardId, String coreNodeName) {
-    
+    Map<String,Object> stateObj = getLeaderInitiatedRecoveryStateObject(collection, shardId, coreNodeName);
+    return (stateObj != null) ? (String)stateObj.get("state") : null;
+  }
+
+  public Map<String,Object> getLeaderInitiatedRecoveryStateObject(String collection, String shardId, String coreNodeName) {
+
     if (collection == null || shardId == null || coreNodeName == null)
       return null; // if we don't have complete data about a core in cloud mode, return null
     
     String znodePath = getLeaderInitiatedRecoveryZnodePath(collection, shardId, coreNodeName);
-    String state = null;
+    byte[] stateData = null;
     try {
-      byte[] data = zkClient.getData(znodePath, null, new Stat(), false);
-      if (data != null && data.length > 0)
-        state = new String(data, "UTF-8");
+      stateData = zkClient.getData(znodePath, null, new Stat(), false);
     } catch (NoNodeException ignoreMe) {
       // safe to ignore as this znode will only exist if the leader initiated recovery
     } catch (ConnectionLossException cle) {
@@ -1917,8 +1914,6 @@ public final class ZkController {
       // sort of safe to ignore ??? Usually these are seen when the core is going down
       // or there are bigger issues to deal with than reading this znode
       log.warn("Unable to read "+znodePath+" due to: "+see);
-    } catch (UnsupportedEncodingException e) {
-      throw new Error("JVM Does not seem to support UTF-8", e);
     } catch (Exception exc) {
       log.error("Failed to read data from znode "+znodePath+" due to: "+exc);
       if (exc instanceof SolrException) {
@@ -1928,9 +1923,26 @@ public final class ZkController {
             "Failed to read data from znodePath: "+znodePath, exc);
       }
     }
-    return state;
+
+    Map<String,Object> stateObj = null;
+    if (stateData != null && stateData.length > 0) {
+      // TODO: Remove later ... this is for upgrading from 4.8.x to 4.10.3 (see: SOLR-6732)
+      if (stateData[0] == (byte)'{') {
+        Object parsedJson = ZkStateReader.fromJSON(stateData);
+        if (parsedJson instanceof Map) {
+          stateObj = (Map<String,Object>)parsedJson;
+        } else {
+          throw new SolrException(ErrorCode.SERVER_ERROR, "Leader-initiated recovery state data is invalid! "+parsedJson);
+        }
+      } else {
+        // old format still in ZK
+        stateObj = ZkNodeProps.makeMap("state", new String(stateData, StandardCharsets.UTF_8));
+      }
+    }
+
+    return stateObj;
   }
-  
+
   private void updateLeaderInitiatedRecoveryState(String collection, String shardId, String coreNodeName, String state) {
     if (collection == null || shardId == null || coreNodeName == null) {
       log.warn("Cannot set leader-initiated recovery state znode to "+state+" using: collection="+collection+
@@ -1939,7 +1951,7 @@ public final class ZkController {
     }
 
     String znodePath = getLeaderInitiatedRecoveryZnodePath(collection, shardId, coreNodeName);
-    
+
     if (ZkStateReader.ACTIVE.equals(state)) {
       // since we're marking it active, we don't need this znode anymore, so delete instead of update
       try {
@@ -1949,14 +1961,22 @@ public final class ZkController {
       }
       return;
     }
-    
-    byte[] znodeData = null;
-    try {
-      znodeData = state.getBytes("UTF-8");
-    } catch (UnsupportedEncodingException e) {
-      throw new Error("JVM Does not seem to support UTF-8", e);
-    }
 
+    Map<String,Object> stateObj = null;
+    try {
+      stateObj = getLeaderInitiatedRecoveryStateObject(collection, shardId, coreNodeName);
+    } catch (Exception exc) {
+      log.warn(exc.getMessage(), exc);
+    }
+    if (stateObj == null)
+      stateObj = ZkNodeProps.makeMap();
+
+    stateObj.put("state", state);
+    // only update the createdBy value if its not set
+    if (stateObj.get("createdByNodeName") == null)
+      stateObj.put("createdByNodeName", String.valueOf(this.nodeName));
+
+    byte[] znodeData = ZkStateReader.toJSON(stateObj);
     boolean retryOnConnLoss = true; // be a little more robust when trying to write data
     try {
       if (zkClient.exists(znodePath, retryOnConnLoss)) {
@@ -1969,8 +1989,8 @@ public final class ZkController {
       if (exc instanceof SolrException) {
         throw (SolrException)exc;
       } else {
-        throw new SolrException(ErrorCode.SERVER_ERROR, 
-            "Failed to update data to "+state+" for znode: "+znodePath, exc);        
+        throw new SolrException(ErrorCode.SERVER_ERROR,
+            "Failed to update data to "+state+" for znode: "+znodePath, exc);
       }
     }
   }

@@ -22,7 +22,6 @@ import junit.framework.Assert;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.core.KeywordTokenizerFactory;
 import org.apache.lucene.analysis.ngram.NGramFilterFactory;
-import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.TestUtil;
 import org.apache.solr.SolrTestCaseJ4;
 import org.apache.solr.common.SolrException;
@@ -77,7 +76,7 @@ public class ResourceLoaderTest extends SolrTestCaseJ4
       }
       loader.close();
     } finally {
-      IOUtils.rm(temp);
+      TestUtil.rm(temp);
     }
   }
 

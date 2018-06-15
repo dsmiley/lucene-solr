@@ -31,7 +31,6 @@ import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.IndexWriterConfig.OpenMode;
 import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.util.Version;
 
 public class TestWindowsMMap extends LuceneTestCase {
   
@@ -67,6 +66,7 @@ public class TestWindowsMMap extends LuceneTestCase {
     // may take some time until the files are finally dereferenced. So clean the
     // directory up front, or otherwise new IndexWriter will fail.
     File dirPath = createTempDir("testLuceneMmap");
+    rmDir(dirPath);
     MMapDirectory dir = new MMapDirectory(dirPath, null);
     
     // plan to add a set of useful stopwords, consider changing some of the
@@ -74,7 +74,7 @@ public class TestWindowsMMap extends LuceneTestCase {
     MockAnalyzer analyzer = new MockAnalyzer(random());
     // TODO: something about lock timeouts and leftover locks.
     IndexWriter writer = new IndexWriter(dir, new IndexWriterConfig(
-        Version.LATEST, analyzer)
+        TEST_VERSION_CURRENT, analyzer)
         .setOpenMode(OpenMode.CREATE));
     writer.commit();
     IndexReader reader = DirectoryReader.open(dir);
@@ -90,5 +90,16 @@ public class TestWindowsMMap extends LuceneTestCase {
     
     reader.close();
     writer.close();
+    rmDir(dirPath);
+  }
+
+  private void rmDir(File dir) {
+    if (!dir.exists()) {
+      return;
+    }
+    for (File file : dir.listFiles()) {
+      file.delete();
+    }
+    dir.delete();
   }
 }

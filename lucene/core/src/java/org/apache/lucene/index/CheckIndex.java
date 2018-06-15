@@ -41,7 +41,6 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
-import org.apache.lucene.util.Accountables;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
@@ -501,7 +500,7 @@ public class CheckIndex {
     }
 
     msg(infoStream, "Segments file=" + segmentsFileName + " numSegments=" + numSegments
-        + " " + versionString + " id=" + sis.getId() + " format=" + sFormat + userDataString);
+        + " " + versionString + " format=" + sFormat + userDataString);
 
     if (onlySegments != null) {
       result.partial = true;
@@ -548,11 +547,10 @@ public class CheckIndex {
 
       int toLoseDocCount = info.info.getDocCount();
 
-      SegmentReader reader = null;
+      AtomicReader reader = null;
 
       try {
         msg(infoStream, "    version=" + (version == null ? "3.0" : version));
-        msg(infoStream, "    id=" + info.info.getId());
         final Codec codec = info.info.getCodec();
         msg(infoStream, "    codec=" + codec);
         segInfoStat.codec = codec;
@@ -679,11 +677,6 @@ public class CheckIndex {
         }
 
         msg(infoStream, "");
-        
-        if (verbose) {
-          msg(infoStream, "detailed segment RAM usage: ");
-          msg(infoStream, Accountables.toString(reader));
-        }
 
       } catch (Throwable t) {
         if (failFast) {

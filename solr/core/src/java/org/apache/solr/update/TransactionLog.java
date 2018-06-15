@@ -24,7 +24,6 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -544,12 +543,7 @@ public class TransactionLog {
       }
 
       if (deleteOnClose) {
-        try {
-          Files.deleteIfExists(tlogFile.toPath());
-        } catch (IOException e) {
-          // TODO: should this class care if a file couldnt be deleted?
-          // this just emulates previous behavior, where only SecurityException would be handled.
-        }
+        tlogFile.delete();
       }
     } catch (IOException e) {
       throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
@@ -651,18 +645,6 @@ public class TransactionLog {
       synchronized (TransactionLog.this) {
         return "LogReader{" + "file=" + tlogFile + ", position=" + fis.position() + ", end=" + fos.size() + "}";
       }
-    }
-
-    // returns best effort current position
-    // for info purposes
-    public long currentPos() {
-      return fis.position();
-    }
-    
-    // returns best effort current size
-    // for info purposes
-    public long currentSize() throws IOException {
-      return channel.size();
     }
 
   }

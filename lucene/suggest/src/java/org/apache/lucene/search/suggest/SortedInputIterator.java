@@ -214,16 +214,12 @@ public class SortedInputIterator implements InputIterator {
   }
   
   private void close() throws IOException {
-    boolean success = false;
-    try {
-      IOUtils.close(reader);
-      success = true;
-    } finally {
-      if (success) {
-        IOUtils.deleteFilesIfExist(tempInput, tempSorted);
-      } else {
-        IOUtils.deleteFilesIgnoringExceptions(tempInput, tempSorted);
-      }
+    IOUtils.close(reader);
+    if (tempInput != null) {
+      tempInput.delete();
+    }
+    if (tempSorted != null) {
+      tempSorted.delete();
     }
   }
   

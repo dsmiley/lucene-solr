@@ -25,8 +25,6 @@
   
   <import file="lucene/common-build.xml"/>
 
-  <property name="svnkit.version" value="1.8.5"/>
-
   <target name="-run-test">
     <mkdir dir="lucene/build" />
     <tempfile property="tests.totals.tmpfile"
@@ -59,13 +57,14 @@
     <mkdir dir="${clover.report.dir}"/>
     <fileset dir="." id="clover.test.result.files">
       <include name="*/build/**/test/TEST-*.xml"/>
+      <exclude name="lucene/build/backwards/**"/>
     </fileset>
-    <clover-report projectName="Apache Lucene/Solr">
-      <current outfile="${clover.report.dir}" title="Apache Lucene/Solr ${version}" numThreads="0">
+    <clover-report>
+      <current outfile="${clover.report.dir}" title="${final.name}" numThreads="0">
         <format type="html" filter="assert"/>
         <testresults refid="clover.test.result.files"/>
       </current>
-      <current outfile="${clover.report.dir}/clover.xml" title="Apache Lucene/Solr ${version}">
+      <current outfile="${clover.report.dir}/clover.xml" title="${final.name}">
         <format type="xml" filter="assert"/>
         <testresults refid="clover.test.result.files"/>
       </current>
@@ -73,32 +72,15 @@
     <echo>You can find the merged Lucene/Solr Clover report in '${clover.report.dir}'.</echo>
   </target>
 
-  <target name="-run-maven-build" depends="install-maven-tasks,resolve-groovy">
-    <groovy><![CDATA[
-      import groovy.xml.NamespaceBuilder;
-      import org.apache.tools.ant.Project;
-      def userHome = properties['user.home'], commonDir = properties['common.dir'];
-      def propPrefix = '-mvn.inject.'; int propPrefixLen = propPrefix.length();
-      def subProject = project.createSubProject();
-      project.copyUserProperties(subProject);
-      subProject.initProperties();
-      new AntBuilder(subProject).sequential{
-        property(file: userHome+'/lucene.build.properties', prefix: propPrefix);
-        property(file: userHome+'/build.properties', prefix: propPrefix);
-        property(file: commonDir+'/build.properties', prefix: propPrefix);
-      };
-      def cmdlineProps = subProject.properties
-        .findAll{ k, v -> k.startsWith(propPrefix) }
-        .collectEntries{ k, v -> [k.substring(propPrefixLen), v] };
-      cmdlineProps << project.userProperties.findAll{ k, v -> !k.startsWith('ant.') };
-      def artifact = NamespaceBuilder.newInstance(ant, 'antlib:org.apache.maven.artifact.ant');
-      task.log('Running Maven with props: ' + cmdlineProps.toString(), Project.MSG_INFO);
-      artifact.mvn(pom: properties['maven-build-dir']+'/pom.xml', mavenVersion: properties['maven-version'], failonerror: true, fork: true) {
-        cmdlineProps.each{ k, v -> arg(value: '-D' + k + '=' + v) };
-        arg(value: '-fae');
-        arg(value: 'install');
-      };
-    ]]></groovy>
+  <target name="-run-maven-build" depends="install-maven-tasks">
+    <mvn xmlns="antlib:org.apache.maven.artifact.ant" pom="${maven-build-dir}/pom.xml"
+      mavenVersion="${maven-version}" failonerror="true" fork="true">
+      <arg value="-fae"/>
+      <arg value="install"/>
+      <syspropertyset>
+        <propertyref builtin="commandline"/>
+      </syspropertyset>
+    </mvn>
   </target>
 
   <target name="-check-svn-working-copy" depends="ivy-availability-check,ivy-fail,ivy-configure,resolve-groovy">
@@ -110,6 +92,8 @@
     <svn-checker failonmodifications="true"/>
   </target>
   
+  <property name="svnkit.version" value="1.8.5"/>
+
   <macrodef xmlns:ivy="antlib:org.apache.ivy.ant" name="svn-checker">
     <attribute name="failonmodifications" default="true"/> <!-- false if file modifications are allowed -->
     <sequential>

@@ -30,10 +30,7 @@ import static org.apache.lucene.codecs.lucene45.Lucene45DocValuesFormat.VERSION_
 import java.io.Closeable; // javadocs
 import java.io.IOException;
 import java.util.Comparator;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -57,8 +54,6 @@ import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.index.TermsEnum.SeekStatus;
 import org.apache.lucene.store.ChecksumIndexInput;
 import org.apache.lucene.store.IndexInput;
-import org.apache.lucene.util.Accountable;
-import org.apache.lucene.util.Accountables;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.IOUtils;
@@ -81,7 +76,6 @@ class Lucene45DocValuesProducer extends DocValuesProducer implements Closeable {
   private final IndexInput data;
   private final int maxDoc;
   private final int version;
-  private final int numFields;
   
   // We need this for pre-4.9 indexes which recorded multiple fields' DocValues
   // updates under the same generation, and therefore the passed FieldInfos may
@@ -114,7 +108,7 @@ class Lucene45DocValuesProducer extends DocValuesProducer implements Closeable {
       ordIndexes = new HashMap<>();
       binaries = new HashMap<>();
       sortedSets = new HashMap<>();
-      numFields = readFields(in, state.fieldInfos);
+      readFields(in, state.fieldInfos);
 
       if (version >= Lucene45DocValuesFormat.VERSION_CHECKSUM) {
         CodecUtil.checkFooter(in);
@@ -211,11 +205,9 @@ class Lucene45DocValuesProducer extends DocValuesProducer implements Closeable {
     ordIndexes.put(fieldNumber, n2);
   }
 
-  private int readFields(IndexInput meta, FieldInfos infos) throws IOException {
-    int numFields = 0;
+  private void readFields(IndexInput meta, FieldInfos infos) throws IOException {
     int fieldNumber = meta.readVInt();
     while (fieldNumber != -1) {
-      numFields++;
       if ((lenientFieldInfoCheck && fieldNumber < 0) || (!lenientFieldInfoCheck && infos.fieldInfo(fieldNumber) == null)) {
         // trickier to validate more: because we re-use for norms, because we use multiple entries
         // for "composite" types like sortedset, etc.
@@ -250,7 +242,6 @@ class Lucene45DocValuesProducer extends DocValuesProducer implements Closeable {
       }
       fieldNumber = meta.readVInt();
     }
-    return numFields;
   }
   
   static NumericEntry readNumericEntry(IndexInput meta) throws IOException {
@@ -340,23 +331,10 @@ class Lucene45DocValuesProducer extends DocValuesProducer implements Closeable {
   }
   
   @Override
-  public synchronized Iterable<? extends Accountable> getChildResources() {
-    List<Accountable> resources = new ArrayList<>();
-    resources.addAll(Accountables.namedAccountables("addresses field number", addressInstances));
-    resources.addAll(Accountables.namedAccountables("ord index field number", ordIndexInstances));
-    return Collections.unmodifiableList(resources);
-  }
-  
-  @Override
   public void checkIntegrity() throws IOException {
     if (version >= Lucene45DocValuesFormat.VERSION_CHECKSUM) {
       CodecUtil.checksumEntireFile(data);
     }
-  }
-  
-  @Override
-  public String toString() {
-    return getClass().getSimpleName() + "(fields=" + numFields + ")";
   }
 
   LongValues getNumeric(NumericEntry entry) throws IOException {
@@ -434,16 +412,18 @@ class Lucene45DocValuesProducer extends DocValuesProducer implements Closeable {
   
   /** returns an address instance for variable-length binary values.
    *  @lucene.internal */
-  protected synchronized MonotonicBlockPackedReader getAddressInstance(IndexInput data, FieldInfo field, BinaryEntry bytes) throws IOException {
+  protected MonotonicBlockPackedReader getAddressInstance(IndexInput data, FieldInfo field, BinaryEntry bytes) throws IOException {
     final MonotonicBlockPackedReader addresses;
-    MonotonicBlockPackedReader addrInstance = addressInstances.get(field.number);
-    if (addrInstance == null) {
-      data.seek(bytes.addressesOffset);
-      addrInstance = MonotonicBlockPackedReader.of(data, bytes.packedIntsVersion, bytes.blockSize, bytes.count, false);
-      addressInstances.put(field.number, addrInstance);
-      ramBytesUsed.addAndGet(addrInstance.ramBytesUsed() + RamUsageEstimator.NUM_BYTES_INT);
+    synchronized (addressInstances) {
+      MonotonicBlockPackedReader addrInstance = addressInstances.get(field.number);
+      if (addrInstance == null) {
+        data.seek(bytes.addressesOffset);
+        addrInstance = MonotonicBlockPackedReader.of(data, bytes.packedIntsVersion, bytes.blockSize, bytes.count, false);
+        addressInstances.put(field.number, addrInstance);
+        ramBytesUsed.addAndGet(addrInstance.ramBytesUsed() + RamUsageEstimator.NUM_BYTES_INT);
+      }
+      addresses = addrInstance;
     }
-    addresses = addrInstance;
     return addresses;
   }
   
@@ -474,23 +454,25 @@ class Lucene45DocValuesProducer extends DocValuesProducer implements Closeable {
   
   /** returns an address instance for prefix-compressed binary values. 
    * @lucene.internal */
-  protected synchronized MonotonicBlockPackedReader getIntervalInstance(IndexInput data, FieldInfo field, BinaryEntry bytes) throws IOException {
+  protected MonotonicBlockPackedReader getIntervalInstance(IndexInput data, FieldInfo field, BinaryEntry bytes) throws IOException {
     final MonotonicBlockPackedReader addresses;
     final long interval = bytes.addressInterval;
-    MonotonicBlockPackedReader addrInstance = addressInstances.get(field.number);
-    if (addrInstance == null) {
-      data.seek(bytes.addressesOffset);
-      final long size;
-      if (bytes.count % interval == 0) {
-        size = bytes.count / interval;
-      } else {
-        size = 1L + bytes.count / interval;
+    synchronized (addressInstances) {
+      MonotonicBlockPackedReader addrInstance = addressInstances.get(field.number);
+      if (addrInstance == null) {
+        data.seek(bytes.addressesOffset);
+        final long size;
+        if (bytes.count % interval == 0) {
+          size = bytes.count / interval;
+        } else {
+          size = 1L + bytes.count / interval;
+        }
+        addrInstance = MonotonicBlockPackedReader.of(data, bytes.packedIntsVersion, bytes.blockSize, size, false);
+        addressInstances.put(field.number, addrInstance);
+        ramBytesUsed.addAndGet(addrInstance.ramBytesUsed() + RamUsageEstimator.NUM_BYTES_INT);
       }
-      addrInstance = MonotonicBlockPackedReader.of(data, bytes.packedIntsVersion, bytes.blockSize, size, false);
-      addressInstances.put(field.number, addrInstance);
-      ramBytesUsed.addAndGet(addrInstance.ramBytesUsed() + RamUsageEstimator.NUM_BYTES_INT);
+      addresses = addrInstance;
     }
-    addresses = addrInstance;
     return addresses;
   }
 
@@ -551,16 +533,18 @@ class Lucene45DocValuesProducer extends DocValuesProducer implements Closeable {
   
   /** returns an address instance for sortedset ordinal lists
    * @lucene.internal */
-  protected synchronized MonotonicBlockPackedReader getOrdIndexInstance(IndexInput data, FieldInfo field, NumericEntry entry) throws IOException {
+  protected MonotonicBlockPackedReader getOrdIndexInstance(IndexInput data, FieldInfo field, NumericEntry entry) throws IOException {
     final MonotonicBlockPackedReader ordIndex;
-    MonotonicBlockPackedReader ordIndexInstance = ordIndexInstances.get(field.number);
-    if (ordIndexInstance == null) {
-      data.seek(entry.offset);
-      ordIndexInstance = MonotonicBlockPackedReader.of(data, entry.packedIntsVersion, entry.blockSize, entry.count, false);
-      ordIndexInstances.put(field.number, ordIndexInstance);
-      ramBytesUsed.addAndGet(ordIndexInstance.ramBytesUsed() + RamUsageEstimator.NUM_BYTES_INT);
+    synchronized (ordIndexInstances) {
+      MonotonicBlockPackedReader ordIndexInstance = ordIndexInstances.get(field.number);
+      if (ordIndexInstance == null) {
+        data.seek(entry.offset);
+        ordIndexInstance = MonotonicBlockPackedReader.of(data, entry.packedIntsVersion, entry.blockSize, entry.count, false);
+        ordIndexInstances.put(field.number, ordIndexInstance);
+        ramBytesUsed.addAndGet(ordIndexInstance.ramBytesUsed() + RamUsageEstimator.NUM_BYTES_INT);
+      }
+      ordIndex = ordIndexInstance;
     }
-    ordIndex = ordIndexInstance;
     return ordIndex;
   }
   

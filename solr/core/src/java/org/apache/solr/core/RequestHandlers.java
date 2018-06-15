@@ -31,7 +31,6 @@ import org.apache.solr.common.SolrException;
 import org.apache.solr.common.SolrException.ErrorCode;
 import org.apache.solr.common.util.NamedList;
 import org.apache.solr.common.util.SimpleOrderedMap;
-import org.apache.solr.common.util.StrUtils;
 import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.request.SolrRequestHandler;
 import org.apache.solr.response.SolrQueryResponse;
@@ -142,12 +141,7 @@ public final class RequestHandlers {
   void initHandlersFromConfig(SolrConfig config, List<PluginInfo> implicits){
     // use link map so we iterate in the same order
     Map<PluginInfo,SolrRequestHandler> handlers = new LinkedHashMap<>();
-    Map<String, PluginInfo> implicitInfoMap= new HashMap<>();
-    //deduping implicit and explicit requesthandlers
-    for (PluginInfo info : implicits) implicitInfoMap.put(info.name,info);
-    for (PluginInfo info : config.getPluginInfos(SolrRequestHandler.class.getName()))
-      if(implicitInfoMap.containsKey(info.name)) implicitInfoMap.remove(info.name);
-    ArrayList<PluginInfo> infos = new ArrayList<>(implicitInfoMap.values());
+    ArrayList<PluginInfo> infos = new ArrayList<>(implicits);
     infos.addAll(config.getPluginInfos(SolrRequestHandler.class.getName()));
     for (PluginInfo info : infos) {
       try {
@@ -184,9 +178,8 @@ public final class RequestHandlers {
     for (Map.Entry<PluginInfo,SolrRequestHandler> entry : handlers.entrySet()) {
       PluginInfo info = entry.getKey();
       SolrRequestHandler requestHandler = entry.getValue();
-      info = applyParamSet(config, info);
       if (requestHandler instanceof PluginInfoInitialized) {
-       ((PluginInfoInitialized) requestHandler).init(info);
+        ((PluginInfoInitialized) requestHandler).init(info);
       } else{
         requestHandler.init(info.initArgs);
       }
@@ -197,28 +190,7 @@ public final class RequestHandlers {
     if(get("") == null)
       log.warn("no default request handler is registered (either '/select' or 'standard')");
   }
-
-  private PluginInfo applyParamSet(SolrConfig config, PluginInfo info) {
-    List<ParamSet> paramSets= new ArrayList<>();
-    String p = info.attributes.get("paramSet");
-    if(p!=null) {
-      for (String paramSet : StrUtils.splitSmart(p, ',')) {
-        if(config.getParamSets().containsKey(paramSet)) paramSets.add(config.getParamSets().get(paramSet));
-        else log.warn("INVALID paramSet {} in requestHandler {}", paramSet, info.toString());
-      }
-    }
-    for (ParamSet paramSet : config.getParamSets().values()) {
-      if(paramSet.matchPath(info.name)) paramSets.add(paramSet);
-    }
-    if(!paramSets.isEmpty()){
-      info = new PluginInfo(info.type, info.attributes, info.initArgs.clone(), info.children);
-      for (ParamSet paramSet : paramSets) {
-        paramSet.apply(info.initArgs);
-      }
-    }
-    return info;
-  }
-
+    
 
   /**
    * The <code>LazyRequestHandlerWrapper</code> wraps any {@link SolrRequestHandler}.  

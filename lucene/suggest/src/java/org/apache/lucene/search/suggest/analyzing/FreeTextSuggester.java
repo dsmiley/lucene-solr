@@ -59,8 +59,6 @@ import org.apache.lucene.store.DataInput;
 import org.apache.lucene.store.DataOutput;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
-import org.apache.lucene.util.Accountable;
-import org.apache.lucene.util.Accountables;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
 import org.apache.lucene.util.CharsRefBuilder;
@@ -210,15 +208,6 @@ public class FreeTextSuggester extends Lookup {
       return 0;
     }
     return fst.ramBytesUsed();
-  }
-
-  @Override
-  public Iterable<? extends Accountable> getChildResources() {
-    if (fst == null) {
-      return Collections.emptyList();
-    } else {
-      return Collections.singletonList(Accountables.namedAccountable("fst", fst));
-    }
   }
 
   private static class AnalyzingComparator implements Comparator<BytesRef> {
@@ -384,12 +373,23 @@ public class FreeTextSuggester extends Lookup {
     } finally {
       try {
         if (success) {
-          IOUtils.close(reader, writer, dir);
+          IOUtils.close(writer, reader);
         } else {
-          IOUtils.closeWhileHandlingException(reader, writer, dir);
+          IOUtils.closeWhileHandlingException(writer, reader);
         }
       } finally {
-        IOUtils.rm(tempIndexPath);
+        for(String file : dir.listAll()) {
+          File path = new File(tempIndexPath, file);
+          if (path.delete() == false) {
+            throw new IllegalStateException("failed to remove " + path);
+          }
+        }
+
+        if (tempIndexPath.delete() == false) {
+          throw new IllegalStateException("failed to remove " + tempIndexPath);
+        }
+
+        dir.close();
       }
     }
   }

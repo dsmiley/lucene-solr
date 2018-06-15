@@ -21,7 +21,6 @@ import java.io.EOFException;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.util.Arrays;
 import java.util.Collections;
@@ -94,29 +93,6 @@ public abstract class BaseDirectoryTestCase extends LuceneTestCase {
     assertArrayEquals(bytes, bytes2);
     
     IOUtils.close(source, dest);
-  }
-  
-  public void testRename() throws Exception {
-    Directory dir = getDirectory(createTempDir("testRename"));
-    
-    IndexOutput output = dir.createOutput("foobar", newIOContext(random()));
-    int numBytes = random().nextInt(20000);
-    byte bytes[] = new byte[numBytes];
-    random().nextBytes(bytes);
-    output.writeBytes(bytes, bytes.length);
-    output.close();
-    
-    dir.renameFile("foobar", "foobaz");
-    
-    IndexInput input = dir.openInput("foobaz", newIOContext(random()));
-    byte bytes2[] = new byte[numBytes];
-    input.readBytes(bytes2, 0, bytes2.length);
-    assertEquals(input.length(), numBytes);
-    input.close();
-    
-    assertArrayEquals(bytes, bytes2);
-    
-    dir.close();
   }
   
   // TODO: are these semantics really needed by lucene? can we just throw exception?
@@ -477,7 +453,7 @@ public abstract class BaseDirectoryTestCase extends LuceneTestCase {
    *  mkdir the underling directory in the filesystem. */
   public void testDontCreate() throws Throwable {
     File path = createTempDir("doesnotexist");
-    IOUtils.rm(path);
+    TestUtil.rm(path);
     assertTrue(!path.exists());
     Directory dir = getDirectory(path);
     assertTrue(!path.exists());
@@ -583,7 +559,7 @@ public abstract class BaseDirectoryTestCase extends LuceneTestCase {
   // LUCENE-3382 -- make sure we get exception if the directory really does not exist.
   public void testNoDir() throws Throwable {
     File tempDir = createTempDir("doesnotexist");
-    IOUtils.rm(tempDir);
+    TestUtil.rm(tempDir);
     Directory dir = getDirectory(tempDir);
     try {
       DirectoryReader.open(dir);
@@ -791,7 +767,7 @@ public abstract class BaseDirectoryTestCase extends LuceneTestCase {
     out.close();
     
     // delete it
-    Files.delete(new File(path, "afile").toPath());
+    assertTrue(new File(path, "afile").delete());
     
     // directory is empty
     assertEquals(0, fsdir.listAll().length);

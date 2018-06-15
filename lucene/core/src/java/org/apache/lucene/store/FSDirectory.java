@@ -26,8 +26,6 @@ import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.FilterOutputStream;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
@@ -126,11 +124,6 @@ public abstract class FSDirectory extends BaseDirectory {
   protected final Set<String> staleFiles = synchronizedSet(new HashSet<String>()); // Files written, but not yet sync'ed
   private int chunkSize = DEFAULT_READ_CHUNK_SIZE;
 
-  // returns the canonical version of the directory, creating it if it doesn't exist.
-  private static File getCanonicalPath(File file) throws IOException {
-    return new File(file.getCanonicalPath());
-  }
-
   /** Create a new FSDirectory for the named location (ctor for subclasses).
    * @param path the path of the directory
    * @param lockFactory the lock factory to use, or null for the default
@@ -142,7 +135,7 @@ public abstract class FSDirectory extends BaseDirectory {
     if (lockFactory == null) {
       lockFactory = new NativeFSLockFactory();
     }
-    directory = getCanonicalPath(path);
+    directory = path.getCanonicalFile();
 
     if (directory.exists() && !directory.isDirectory())
       throw new NoSuchDirectoryException("file '" + directory + "' exists but is not a directory");
@@ -270,7 +263,8 @@ public abstract class FSDirectory extends BaseDirectory {
   public void deleteFile(String name) throws IOException {
     ensureOpen();
     File file = new File(directory, name);
-    Files.delete(file.toPath());
+    if (!file.delete())
+      throw new IOException("Cannot delete " + file);
     staleFiles.remove(name);
   }
 
@@ -289,7 +283,8 @@ public abstract class FSDirectory extends BaseDirectory {
         throw new IOException("Cannot create directory: " + directory);
 
     File file = new File(directory, name);
-    Files.deleteIfExists(file.toPath()); // delete existing, if any
+    if (file.exists() && !file.delete())          // delete existing, if any
+      throw new IOException("Cannot overwrite: " + file);
   }
 
   /**
@@ -310,16 +305,13 @@ public abstract class FSDirectory extends BaseDirectory {
       fsync(name);
     }
     
+    // fsync the directory itsself, but only if there was any file fsynced before
+    // (otherwise it can happen that the directory does not yet exist)!
+    if (!toSync.isEmpty()) {
+      IOUtils.fsync(directory, true);
+    }
+    
     staleFiles.removeAll(toSync);
-  }
-  
-  @Override
-  public void renameFile(String source, String dest) throws IOException {
-    ensureOpen();
-    Files.move(new File(directory, source).toPath(), new File(directory, dest).toPath(), StandardCopyOption.ATOMIC_MOVE);
-    // TODO: should we move directory fsync to a separate 'syncMetadata' method?
-    // for example, to improve listCommits(), IndexFileDeleter could also call that after deleting segments_Ns
-    IOUtils.fsync(directory, true);
   }
 
   @Override

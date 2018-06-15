@@ -19,20 +19,19 @@ package org.apache.lucene.store;
 
 import java.io.IOException;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
 import org.apache.lucene.index.IndexFileNames;
 import org.apache.lucene.store.RAMDirectory;      // javadocs
 import org.apache.lucene.util.Accountable;
-import org.apache.lucene.util.Accountables;
 import org.apache.lucene.util.IOUtils;
 
 // TODO
 //   - let subclass dictate policy...?
 //   - rename to MergeCacheingDir?  NRTCachingDir
 
+// :Post-Release-Update-Version.LUCENE_X_Y: (in <pre> block in javadoc below)
 /**
  * Wraps a {@link RAMDirectory}
  * around any provided delegate directory, to
@@ -53,7 +52,7 @@ import org.apache.lucene.util.IOUtils;
  * <pre class="prettyprint">
  *   Directory fsDir = FSDirectory.open(new File("/path/to/index"));
  *   NRTCachingDirectory cachedFSDir = new NRTCachingDirectory(fsDir, 5.0, 60.0);
- *   IndexWriterConfig conf = new IndexWriterConfig(analyzer);
+ *   IndexWriterConfig conf = new IndexWriterConfig(Version.LUCENE_4_10_0, analyzer);
  *   IndexWriter writer = new IndexWriter(cachedFSDir, conf);
  * </pre>
  *
@@ -186,14 +185,6 @@ public class NRTCachingDirectory extends FilterDirectory implements Accountable 
   }
 
   @Override
-  public void renameFile(String source, String dest) throws IOException {
-    // NOTE: uncache is unnecessary for lucene's usage, as we always sync() before renaming.
-    unCache(source);
-    in.renameFile(source, dest);
-  }
-
-
-  @Override
   public synchronized IndexInput openInput(String name, IOContext context) throws IOException {
     if (VERBOSE) {
       System.out.println("nrtdir.openInput name=" + name);
@@ -236,7 +227,7 @@ public class NRTCachingDirectory extends FilterDirectory implements Accountable 
       bytes = context.flushInfo.estimatedSegmentSize;
     }
 
-    return (bytes <= maxMergeSizeBytes) && (bytes + cache.ramBytesUsed()) <= maxCachedBytes;
+    return !name.equals(IndexFileNames.SEGMENTS_GEN) && (bytes <= maxMergeSizeBytes) && (bytes + cache.ramBytesUsed()) <= maxCachedBytes;
   }
 
   private final Object uncacheLock = new Object();
@@ -274,10 +265,5 @@ public class NRTCachingDirectory extends FilterDirectory implements Accountable 
   @Override
   public long ramBytesUsed() {
     return cache.ramBytesUsed();
-  }
-  
-  @Override
-  public Iterable<? extends Accountable> getChildResources() {
-    return Collections.singleton(Accountables.namedAccountable("cache", cache));
   }
 }

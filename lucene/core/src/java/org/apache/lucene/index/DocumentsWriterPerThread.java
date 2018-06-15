@@ -39,7 +39,6 @@ import org.apache.lucene.util.InfoStream;
 import org.apache.lucene.util.IntBlockPool;
 import org.apache.lucene.util.MutableBits;
 import org.apache.lucene.util.RamUsageEstimator;
-import org.apache.lucene.util.StringHelper;
 import org.apache.lucene.util.Version;
 
 import static org.apache.lucene.util.ByteBlockPool.BYTE_BLOCK_MASK;
@@ -179,7 +178,7 @@ class DocumentsWriterPerThread {
     pendingUpdates.clear();
     deleteSlice = deleteQueue.newSlice();
    
-    segmentInfo = new SegmentInfo(directoryOrig, Version.LATEST, segmentName, -1, false, codec, null, null, StringHelper.randomId());
+    segmentInfo = new SegmentInfo(directoryOrig, Version.LATEST, segmentName, -1, false, codec, null);
     assert numDocsInRAM == 0;
     if (INFO_VERBOSE && infoStream.isEnabled("DWPT")) {
       infoStream.message("DWPT", Thread.currentThread().getName() + " init seg=" + segmentName + " delQueue=" + deleteQueue);  
@@ -212,17 +211,18 @@ class DocumentsWriterPerThread {
 
   /** Anything that will add N docs to the index should reserve first to
    *  make sure it's allowed. */
-  private void reserveDoc() {
+  private void reserveOneDoc() {
     if (pendingNumDocs.incrementAndGet() > IndexWriter.getActualMaxDocs()) {
-      // Reserve failed
+      // Reserve failed: put the one doc back and throw exc:
       pendingNumDocs.decrementAndGet();
-      throw new IllegalStateException("number of documents in the index cannot exceed " + IndexWriter.getActualMaxDocs());
+      throw new IllegalArgumentException("number of documents in the index cannot exceed " + IndexWriter.getActualMaxDocs());
     }
   }
 
   public void updateDocument(Iterable<? extends IndexableField> doc, Analyzer analyzer, Term delTerm) throws IOException {
     assert testPoint("DocumentsWriterPerThread addDocument start");
     assert deleteQueue != null;
+    reserveOneDoc();
     docState.doc = doc;
     docState.analyzer = analyzer;
     docState.docID = numDocsInRAM;
@@ -235,7 +235,6 @@ class DocumentsWriterPerThread {
     // document, so the counter will be "wrong" in that case, but
     // it's very hard to fix (we can't easily distinguish aborting
     // vs non-aborting exceptions):
-    reserveDoc();
     boolean success = false;
     try {
       try {
@@ -275,7 +274,7 @@ class DocumentsWriterPerThread {
         // document, so the counter will be "wrong" in that case, but
         // it's very hard to fix (we can't easily distinguish aborting
         // vs non-aborting exceptions):
-        reserveDoc();
+        reserveOneDoc();
         docState.doc = doc;
         docState.docID = numDocsInRAM;
         docCount++;

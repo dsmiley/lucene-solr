@@ -32,7 +32,6 @@ import org.apache.lucene.util.LuceneTestCase.Slow;
 import org.apache.lucene.util.LuceneTestCase.Nightly;
 import org.apache.solr.SolrTestCaseJ4.SuppressSSL;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
-import org.apache.solr.client.solrj.request.CollectionAdminRequest.Create;
 import org.apache.solr.client.solrj.response.CollectionAdminResponse;
 import org.apache.solr.cloud.hdfs.HdfsTestUtil;
 import org.apache.solr.common.cloud.ClusterStateUtil;
@@ -114,31 +113,15 @@ public class SharedFSAutoReplicaFailoverTest extends AbstractFullDistribZkTestBa
   // serially
   private void testBasics() throws Exception {
     String collection1 = "solrj_collection";
-    Create createCollectionRequest = new Create();
-    createCollectionRequest.setCollectionName(collection1);
-    createCollectionRequest.setNumShards(2);
-    createCollectionRequest.setReplicationFactor(2);
-    createCollectionRequest.setMaxShardsPerNode(2);
-    createCollectionRequest.setConfigName("conf1");
-    createCollectionRequest.setRouterField("myOwnField");
-    createCollectionRequest.setAutoAddReplicas(true);
-    CollectionAdminResponse response = createCollectionRequest.process(cloudClient);
-
+    CollectionAdminResponse response = CollectionAdminRequest.createCollection(collection1, 2,
+        2, 2, null, "conf1", "myOwnField", true, cloudClient);
     assertEquals(0, response.getStatus());
     assertTrue(response.isSuccess());
     waitForRecoveriesToFinish(collection1, false);
     
     String collection2 = "solrj_collection2";
-    createCollectionRequest = new Create();
-    createCollectionRequest.setCollectionName(collection2);
-    createCollectionRequest.setNumShards(2);
-    createCollectionRequest.setReplicationFactor(2);
-    createCollectionRequest.setMaxShardsPerNode(2);
-    createCollectionRequest.setConfigName("conf1");
-    createCollectionRequest.setRouterField("myOwnField");
-    createCollectionRequest.setAutoAddReplicas(false);
-    CollectionAdminResponse response2 = createCollectionRequest.process(getCommonCloudSolrServer());
-
+    CollectionAdminResponse response2 = CollectionAdminRequest.createCollection(collection2, 2,
+        2, 2, null, "conf1", "myOwnField", false, cloudClient);
     assertEquals(0, response2.getStatus());
     assertTrue(response2.isSuccess());
     

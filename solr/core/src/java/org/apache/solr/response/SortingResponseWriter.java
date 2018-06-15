@@ -72,9 +72,7 @@ public class SortingResponseWriter implements QueryResponseWriter {
   public void write(Writer writer, SolrQueryRequest req, SolrQueryResponse res) throws IOException {
     Exception e1 = res.getException();
     if(e1 != null) {
-      if(!(e1 instanceof IgnoreException)) {
-        e1.printStackTrace(new PrintWriter(writer));
-      }
+      e1.printStackTrace(new PrintWriter(writer));
       return;
     }
     SolrRequestInfo info = SolrRequestInfo.getRequestInfo();
@@ -119,7 +117,7 @@ public class SortingResponseWriter implements QueryResponseWriter {
     }
 
     FieldWriter[] fieldWriters = getFieldWriters(fields, req.getSearcher());
-    writer.write("{\"numFound\":"+totalHits+", \"docs\":[");
+    writer.write("{\"responseHeader\": {\"status\": 0}, \"response\":{\"numFound\":"+totalHits+", \"docs\":[");
 
     //Write the data.
     List<AtomicReaderContext> leaves = req.getSearcher().getTopReaderContext().leaves();
@@ -129,11 +127,9 @@ public class SortingResponseWriter implements QueryResponseWriter {
     SortQueue queue = new SortQueue(queueSize, sortDoc);
     SortDoc[] outDocs = new SortDoc[queueSize];
 
-    long total = 0;
-
+    boolean commaNeeded = false;
     while(count < totalHits) {
       //long begin = System.nanoTime();
-      boolean commaNeeded = false;
       queue.reset();
       SortDoc top = queue.top();
       for(int i=0; i<leaves.size(); i++) {
@@ -177,7 +173,8 @@ public class SortingResponseWriter implements QueryResponseWriter {
         while(ex != null) {
           String m = ex.getMessage();
           if(m != null && m.contains("Broken pipe")) {
-            throw new IgnoreException();
+            logger.info("Early client disconnect during export");
+            return;
           }
           ex = ex.getCause();
         }
@@ -191,20 +188,11 @@ public class SortingResponseWriter implements QueryResponseWriter {
     }
 
     //System.out.println("Sort Time 2:"+Long.toString(total/1000000));
-    writer.write("]}");
+    writer.write("]}}");
     writer.flush();
   }
 
-  public static class IgnoreException extends IOException {
-    public void printStackTrace(PrintWriter pw) {
-      pw.print("Early Client Disconnect");
 
-    }
-
-    public String getMessage() {
-      return "Early Client Disconnect";
-    }
-  }
 
 
   protected void writeDoc(SortDoc sortDoc,

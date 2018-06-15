@@ -20,7 +20,6 @@ package org.apache.lucene.search;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,7 +39,6 @@ import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.index.Terms;
 import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.util.Accountable;
-import org.apache.lucene.util.Accountables;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.FieldCacheSanityChecker;
@@ -374,11 +372,6 @@ class FieldCacheImpl implements FieldCache {
         return base + (bits.length() >>> 3);
       }
     }
-
-    @Override
-    public Iterable<? extends Accountable> getChildResources() {
-      return Collections.emptyList();
-    }
   }
   
   // inherit javadocs
@@ -427,11 +420,6 @@ class FieldCacheImpl implements FieldCache {
     @Override
     public long ramBytesUsed() {
       return RamUsageEstimator.NUM_BYTES_OBJECT_REF + RamUsageEstimator.sizeOf(values);
-    }
-    
-    @Override
-    public Iterable<? extends Accountable> getChildResources() {
-      return Collections.emptyList();
     }
   }
 
@@ -532,11 +520,6 @@ class FieldCacheImpl implements FieldCache {
     public long ramBytesUsed() {
       return RamUsageEstimator.NUM_BYTES_OBJECT_REF + RamUsageEstimator.sizeOf(values);
     }
-    
-    @Override
-    public Iterable<? extends Accountable> getChildResources() {
-      return Collections.emptyList();
-    }
   }
 
   static final class ShortCache extends Cache {
@@ -636,11 +619,6 @@ class FieldCacheImpl implements FieldCache {
     @Override
     public long ramBytesUsed() {
       return RamUsageEstimator.NUM_BYTES_OBJECT_REF + RamUsageEstimator.NUM_BYTES_INT + values.ramBytesUsed();
-    }
-    
-    @Override
-    public Iterable<? extends Accountable> getChildResources() {
-      return Collections.emptyList();
     }
   }
 
@@ -864,11 +842,6 @@ class FieldCacheImpl implements FieldCache {
     public long ramBytesUsed() {
       return RamUsageEstimator.NUM_BYTES_OBJECT_REF + RamUsageEstimator.sizeOf(values);
     }
-    
-    @Override
-    public Iterable<? extends Accountable> getChildResources() {
-      return Collections.emptyList();
-    }
   }
 
   static final class FloatCache extends Cache {
@@ -986,11 +959,6 @@ class FieldCacheImpl implements FieldCache {
     @Override
     public long ramBytesUsed() {
       return RamUsageEstimator.NUM_BYTES_OBJECT_REF + RamUsageEstimator.NUM_BYTES_LONG + values.ramBytesUsed();
-    }
-    
-    @Override
-    public Iterable<? extends Accountable> getChildResources() {
-      return Collections.emptyList();
     }
   }
 
@@ -1121,11 +1089,6 @@ class FieldCacheImpl implements FieldCache {
     public long ramBytesUsed() {
       return RamUsageEstimator.NUM_BYTES_OBJECT_REF + RamUsageEstimator.sizeOf(values);
     }
-    
-    @Override
-    public Iterable<? extends Accountable> getChildResources() {
-      return Collections.emptyList();
-    }
   }
 
   static final class DoubleCache extends Cache {
@@ -1242,20 +1205,6 @@ class FieldCacheImpl implements FieldCache {
              bytes.ramBytesUsed() + 
              termOrdToBytesOffset.ramBytesUsed() + 
              docToTermOrd.ramBytesUsed();
-    }
-    
-    @Override
-    public Iterable<? extends Accountable> getChildResources() {
-      List<Accountable> resources = new ArrayList<>();
-      resources.add(Accountables.namedAccountable("term bytes", bytes));
-      resources.add(Accountables.namedAccountable("ord -> term", termOrdToBytesOffset));
-      resources.add(Accountables.namedAccountable("doc -> ord", docToTermOrd));
-      return Collections.unmodifiableList(resources);
-    }
-
-    @Override
-    public String toString() {
-      return getClass().getSimpleName() + "(numOrd=" + numOrd + ")";
     }
   }
 
@@ -1400,14 +1349,6 @@ class FieldCacheImpl implements FieldCache {
     @Override
     public long ramBytesUsed() {
       return 2*RamUsageEstimator.NUM_BYTES_OBJECT_REF + bytes.ramBytesUsed() + docToOffset.ramBytesUsed();
-    }
-    
-    @Override
-    public Iterable<? extends Accountable> getChildResources() {
-      List<Accountable> resources = new ArrayList<>();
-      resources.add(Accountables.namedAccountable("term bytes", bytes));
-      resources.add(Accountables.namedAccountable("addresses", docToOffset));
-      return Collections.unmodifiableList(resources);
     }
   }
 

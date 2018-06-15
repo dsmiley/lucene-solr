@@ -33,9 +33,8 @@ import org.apache.tika.metadata.Metadata;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.apache.lucene.util.LuceneTestCase.AwaitsFix;
 
-@AwaitsFix(bugUrl="https://issues.apache.org/jira/browse/SOLR-6489")
+
 public class SolrCellMorphlineTest extends AbstractSolrMorphlineTestBase {
 
   private Map<String,Integer> expectedRecords = new HashMap<>();

@@ -23,7 +23,6 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.Properties;
 
 import org.apache.lucene.benchmark.byTask.feeds.ContentSource;
@@ -45,13 +44,13 @@ public class ExtractWikipedia {
   static final int BASE = 10;
   protected DocMaker docMaker;
 
-  public ExtractWikipedia(DocMaker docMaker, File outputDir) throws IOException {
+  public ExtractWikipedia(DocMaker docMaker, File outputDir) {
     this.outputDir = outputDir;
     this.docMaker = docMaker;
     System.out.println("Deleting all files in " + outputDir);
     File[] files = outputDir.listFiles();
     for (int i = 0; i < files.length; i++) {
-      Files.delete(files[i].toPath());
+      files[i].delete();
     }
   }
 

@@ -30,7 +30,6 @@ import org.junit.Test;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.List;
 import java.util.ArrayList;
 
@@ -63,7 +62,7 @@ public class TestCSVLoader extends SolrTestCaseJ4 {
     // if you override setUp or tearDown, you better call
     // the super classes version
     super.tearDown();
-    Files.delete(file.toPath());
+    deleteFile();
   }
 
   void makeFile(String contents) {
@@ -74,6 +73,10 @@ public class TestCSVLoader extends SolrTestCaseJ4 {
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
+  }
+
+  void deleteFile() {
+    file.delete();
   }
 
   void cleanup() {

@@ -37,8 +37,6 @@ import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.store.CompoundFileDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IndexInput;
-import org.apache.lucene.util.Accountable;
-import org.apache.lucene.util.Accountables;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.IOUtils;
@@ -59,11 +57,12 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
   private static final String segmentSuffix = "dv";
 
   // ram instances we have already loaded
-  private final Map<String,NumericDocValues> numericInstances = new HashMap<>();
-  private final Map<String,BinaryDocValues> binaryInstances = new HashMap<>();
-  private final Map<String,SortedDocValues> sortedInstances = new HashMap<>();
-  
-  private final Map<String,Accountable> instanceInfo = new HashMap<>();
+  private final Map<Integer,NumericDocValues> numericInstances =
+      new HashMap<>();
+  private final Map<Integer,BinaryDocValues> binaryInstances =
+      new HashMap<>();
+  private final Map<Integer,SortedDocValues> sortedInstances =
+      new HashMap<>();
 
   private final AtomicLong ramBytesUsed;
 
@@ -76,7 +75,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
 
   @Override
   public synchronized NumericDocValues getNumeric(FieldInfo field) throws IOException {
-    NumericDocValues instance = numericInstances.get(field.name);
+    NumericDocValues instance = numericInstances.get(field.number);
     if (instance == null) {
       String fileName = IndexFileNames.segmentFileName(state.segmentInfo.name + "_" + Integer.toString(field.number), segmentSuffix, "dat");
       IndexInput input = dir.openInput(fileName, state.context);
@@ -116,7 +115,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
           IOUtils.closeWhileHandlingException(input);
         }
       }
-      numericInstances.put(field.name, instance);
+      numericInstances.put(field.number, instance);
     }
     return instance;
   }
@@ -132,9 +131,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
       for (int i = 0; i < values.length; i++) {
         values[i] = input.readLong();
       }
-      long bytesUsed = RamUsageEstimator.sizeOf(values);
-      instanceInfo.put(field.name, Accountables.namedAccountable("long array", bytesUsed));
-      ramBytesUsed.addAndGet(bytesUsed);
+      ramBytesUsed.addAndGet(RamUsageEstimator.sizeOf(values));
       return new NumericDocValues() {
         @Override
         public long get(int docID) {
@@ -145,7 +142,6 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
       final long minValue = input.readLong();
       final long defaultValue = input.readLong();
       final PackedInts.Reader reader = PackedInts.getReader(input);
-      instanceInfo.put(field.name, reader);
       ramBytesUsed.addAndGet(reader.ramBytesUsed());
       return new NumericDocValues() {
         @Override
@@ -174,9 +170,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
     int maxDoc = state.segmentInfo.getDocCount();
     final byte values[] = new byte[maxDoc];
     input.readBytes(values, 0, values.length);
-    long bytesUsed = RamUsageEstimator.sizeOf(values);
-    instanceInfo.put(field.name, Accountables.namedAccountable("byte array", bytesUsed));
-    ramBytesUsed.addAndGet(bytesUsed);
+    ramBytesUsed.addAndGet(RamUsageEstimator.sizeOf(values));
     return new NumericDocValues() {
       @Override
       public long get(int docID) {
@@ -198,9 +192,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
     for (int i = 0; i < values.length; i++) {
       values[i] = input.readShort();
     }
-    long bytesUsed = RamUsageEstimator.sizeOf(values);
-    instanceInfo.put(field.name, Accountables.namedAccountable("short array", bytesUsed));
-    ramBytesUsed.addAndGet(bytesUsed);
+    ramBytesUsed.addAndGet(RamUsageEstimator.sizeOf(values));
     return new NumericDocValues() {
       @Override
       public long get(int docID) {
@@ -222,9 +214,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
     for (int i = 0; i < values.length; i++) {
       values[i] = input.readInt();
     }
-    long bytesUsed = RamUsageEstimator.sizeOf(values);
-    instanceInfo.put(field.name, Accountables.namedAccountable("int array", bytesUsed));
-    ramBytesUsed.addAndGet(bytesUsed);
+    ramBytesUsed.addAndGet(RamUsageEstimator.sizeOf(values));
     return new NumericDocValues() {
       @Override
       public long get(int docID) {
@@ -246,9 +236,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
     for (int i = 0; i < values.length; i++) {
       values[i] = input.readLong();
     }
-    long bytesUsed = RamUsageEstimator.sizeOf(values);
-    instanceInfo.put(field.name, Accountables.namedAccountable("long array", bytesUsed));
-    ramBytesUsed.addAndGet(bytesUsed);
+    ramBytesUsed.addAndGet(RamUsageEstimator.sizeOf(values));
     return new NumericDocValues() {
       @Override
       public long get(int docID) {
@@ -270,9 +258,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
     for (int i = 0; i < values.length; i++) {
       values[i] = input.readInt();
     }
-    long bytesUsed = RamUsageEstimator.sizeOf(values);
-    instanceInfo.put(field.name, Accountables.namedAccountable("float array", bytesUsed));
-    ramBytesUsed.addAndGet(bytesUsed);
+    ramBytesUsed.addAndGet(RamUsageEstimator.sizeOf(values));
     return new NumericDocValues() {
       @Override
       public long get(int docID) {
@@ -294,9 +280,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
     for (int i = 0; i < values.length; i++) {
       values[i] = input.readLong();
     }
-    long bytesUsed = RamUsageEstimator.sizeOf(values);
-    instanceInfo.put(field.name, Accountables.namedAccountable("double array", bytesUsed));
-    ramBytesUsed.addAndGet(bytesUsed);
+    ramBytesUsed.addAndGet(RamUsageEstimator.sizeOf(values));
     return new NumericDocValues() {
       @Override
       public long get(int docID) {
@@ -307,7 +291,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
 
   @Override
   public synchronized BinaryDocValues getBinary(FieldInfo field) throws IOException {
-    BinaryDocValues instance = binaryInstances.get(field.name);
+    BinaryDocValues instance = binaryInstances.get(field.number);
     if (instance == null) {
       switch(LegacyDocValuesType.valueOf(field.getAttribute(legacyKey))) {
         case BYTES_FIXED_STRAIGHT:
@@ -325,7 +309,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
         default:
           throw new AssertionError();
       }
-      binaryInstances.put(field.name, instance);
+      binaryInstances.put(field.number, instance);
     }
     return instance;
   }
@@ -345,7 +329,6 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
       CodecUtil.checkEOF(input);
       success = true;
       ramBytesUsed.addAndGet(bytesReader.ramBytesUsed());
-      instanceInfo.put(field.name, bytesReader);
       return new BinaryDocValues() {
 
         @Override
@@ -387,9 +370,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
       CodecUtil.checkEOF(data);
       CodecUtil.checkEOF(index);
       success = true;
-      long bytesUsed = bytesReader.ramBytesUsed() + reader.ramBytesUsed();
-      ramBytesUsed.addAndGet(bytesUsed);
-      instanceInfo.put(field.name, Accountables.namedAccountable("variable straight", bytesUsed));
+      ramBytesUsed.addAndGet(bytesReader.ramBytesUsed() + reader.ramBytesUsed());
       return new BinaryDocValues() {
         @Override
         public BytesRef get(int docID) {
@@ -433,9 +414,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
       final PackedInts.Reader reader = PackedInts.getReader(index);
       CodecUtil.checkEOF(data);
       CodecUtil.checkEOF(index);
-      long bytesUsed = bytesReader.ramBytesUsed() + reader.ramBytesUsed();
-      ramBytesUsed.addAndGet(bytesUsed);
-      instanceInfo.put(field.name, Accountables.namedAccountable("fixed deref", bytesUsed));
+      ramBytesUsed.addAndGet(bytesReader.ramBytesUsed() + reader.ramBytesUsed());
       success = true;
       return new BinaryDocValues() {
         @Override
@@ -478,9 +457,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
       final PackedInts.Reader reader = PackedInts.getReader(index);
       CodecUtil.checkEOF(data);
       CodecUtil.checkEOF(index);
-      long bytesUsed = bytesReader.ramBytesUsed() + reader.ramBytesUsed();
-      ramBytesUsed.addAndGet(bytesUsed);
-      instanceInfo.put(field.name, Accountables.namedAccountable("variable deref", bytesUsed));
+      ramBytesUsed.addAndGet(bytesReader.ramBytesUsed() + reader.ramBytesUsed());
       success = true;
       return new BinaryDocValues() {
         
@@ -513,7 +490,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
 
   @Override
   public synchronized SortedDocValues getSorted(FieldInfo field) throws IOException {
-    SortedDocValues instance = sortedInstances.get(field.name);
+    SortedDocValues instance = sortedInstances.get(field.number);
     if (instance == null) {
       String dataName = IndexFileNames.segmentFileName(state.segmentInfo.name + "_" + Integer.toString(field.number), segmentSuffix, "dat");
       String indexName = IndexFileNames.segmentFileName(state.segmentInfo.name + "_" + Integer.toString(field.number), segmentSuffix, "idx");
@@ -543,7 +520,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
           IOUtils.closeWhileHandlingException(data, index);
         }
       }
-      sortedInstances.put(field.name, instance);
+      sortedInstances.put(field.number, instance);
     }
     return instance;
   }
@@ -563,9 +540,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
     bytes.copy(data, fixedLength * (long) valueCount);
     final PagedBytes.Reader bytesReader = bytes.freeze(true);
     final PackedInts.Reader reader = PackedInts.getReader(index);
-    long bytesUsed = bytesReader.ramBytesUsed() + reader.ramBytesUsed();
-    ramBytesUsed.addAndGet(bytesUsed);
-    instanceInfo.put(field.name, Accountables.namedAccountable("fixed sorted", bytesUsed));
+    ramBytesUsed.addAndGet(bytesReader.ramBytesUsed() + reader.ramBytesUsed());
 
     return correctBuggyOrds(new SortedDocValues() {
       @Override
@@ -603,9 +578,7 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
     final PackedInts.Reader ordsReader = PackedInts.getReader(index);
 
     final int valueCount = addressReader.size() - 1;
-    long bytesUsed = bytesReader.ramBytesUsed() + addressReader.ramBytesUsed() + ordsReader.ramBytesUsed();
-    ramBytesUsed.addAndGet(bytesUsed);
-    instanceInfo.put(field.name, Accountables.namedAccountable("var sorted", bytesUsed));
+    ramBytesUsed.addAndGet(bytesReader.ramBytesUsed() + addressReader.ramBytesUsed() + ordsReader.ramBytesUsed());
 
     return correctBuggyOrds(new SortedDocValues() {
       @Override
@@ -681,18 +654,8 @@ final class Lucene40DocValuesReader extends DocValuesProducer {
   public long ramBytesUsed() {
     return ramBytesUsed.get();
   }
-  
-  @Override
-  public synchronized Iterable<? extends Accountable> getChildResources() {
-    return Accountables.namedAccountables("field", instanceInfo);
-  }
 
   @Override
   public void checkIntegrity() throws IOException {
-  }
-
-  @Override
-  public String toString() {
-    return getClass().getSimpleName();
   }
 }

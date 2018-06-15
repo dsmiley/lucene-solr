@@ -47,10 +47,10 @@ public class BlendedInfixSuggesterTest extends LuceneTestCase {
     File tempDir = createTempDir("BlendedInfixSuggesterTest");
 
     Analyzer a = new StandardAnalyzer(CharArraySet.EMPTY_SET);
-    BlendedInfixSuggester suggester = new BlendedInfixSuggester(newFSDirectory(tempDir), a, a,
+    BlendedInfixSuggester suggester = new BlendedInfixSuggester(TEST_VERSION_CURRENT, newFSDirectory(tempDir), a, a,
                                                                 AnalyzingInfixSuggester.DEFAULT_MIN_PREFIX_CHARS,
                                                                 BlendedInfixSuggester.BlenderType.POSITION_LINEAR,
-                                                                BlendedInfixSuggester.DEFAULT_NUM_FACTOR, false);
+                                                                BlendedInfixSuggester.DEFAULT_NUM_FACTOR);
     suggester.build(new InputArrayIterator(keys));
 
     // we query for star wars and check that the weight
@@ -87,7 +87,7 @@ public class BlendedInfixSuggesterTest extends LuceneTestCase {
     Analyzer a = new StandardAnalyzer(CharArraySet.EMPTY_SET);
 
     // BlenderType.LINEAR is used by default (remove position*10%)
-    BlendedInfixSuggester suggester = new BlendedInfixSuggester(newFSDirectory(tempDir), a);
+    BlendedInfixSuggester suggester = new BlendedInfixSuggester(TEST_VERSION_CURRENT, newFSDirectory(tempDir), a);
     suggester.build(new InputArrayIterator(keys));
 
     assertEquals(w, getInResults(suggester, "top", pl, 1));
@@ -97,9 +97,8 @@ public class BlendedInfixSuggesterTest extends LuceneTestCase {
     suggester.close();
 
     // BlenderType.RECIPROCAL is using 1/(1+p) * w where w is weight and p the position of the word
-    suggester = new BlendedInfixSuggester(newFSDirectory(tempDir), a, a,
-                                          AnalyzingInfixSuggester.DEFAULT_MIN_PREFIX_CHARS,
-                                          BlendedInfixSuggester.BlenderType.POSITION_RECIPROCAL, 1, false);
+    suggester = new BlendedInfixSuggester(TEST_VERSION_CURRENT, newFSDirectory(tempDir), a, a,
+                                          AnalyzingInfixSuggester.DEFAULT_MIN_PREFIX_CHARS, BlendedInfixSuggester.BlenderType.POSITION_RECIPROCAL, 1);
     suggester.build(new InputArrayIterator(keys));
 
     assertEquals(w, getInResults(suggester, "top", pl, 1));
@@ -129,9 +128,8 @@ public class BlendedInfixSuggesterTest extends LuceneTestCase {
     Analyzer a = new StandardAnalyzer(CharArraySet.EMPTY_SET);
 
     // if factor is small, we don't get the expected element
-    BlendedInfixSuggester suggester = new BlendedInfixSuggester(newFSDirectory(tempDir), a, a,
-                                                                AnalyzingInfixSuggester.DEFAULT_MIN_PREFIX_CHARS,
-                                                                BlendedInfixSuggester.BlenderType.POSITION_RECIPROCAL, 1, false);
+    BlendedInfixSuggester suggester = new BlendedInfixSuggester(TEST_VERSION_CURRENT, newFSDirectory(tempDir), a, a,
+                                                                AnalyzingInfixSuggester.DEFAULT_MIN_PREFIX_CHARS, BlendedInfixSuggester.BlenderType.POSITION_RECIPROCAL, 1);
 
     suggester.build(new InputArrayIterator(keys));
 
@@ -149,9 +147,8 @@ public class BlendedInfixSuggesterTest extends LuceneTestCase {
     suggester.close();
 
     // if we increase the factor we have it
-    suggester = new BlendedInfixSuggester(newFSDirectory(tempDir), a, a,
-                                          AnalyzingInfixSuggester.DEFAULT_MIN_PREFIX_CHARS,
-                                          BlendedInfixSuggester.BlenderType.POSITION_RECIPROCAL, 2, false);
+    suggester = new BlendedInfixSuggester(TEST_VERSION_CURRENT, newFSDirectory(tempDir), a, a,
+                                          AnalyzingInfixSuggester.DEFAULT_MIN_PREFIX_CHARS, BlendedInfixSuggester.BlenderType.POSITION_RECIPROCAL, 2);
     suggester.build(new InputArrayIterator(keys));
 
     // we have it
@@ -161,6 +158,33 @@ public class BlendedInfixSuggesterTest extends LuceneTestCase {
     // but we don't have the other
     long w3 = getInResults(suggester, "the", star, 2);
     assertTrue(w3 < 0);
+
+    suggester.close();
+  }
+
+  /**
+   * Handle trailing spaces that result in no prefix token LUCENE-6093
+   */
+  public void testNullPrefixToken() throws IOException {
+
+    BytesRef payload = new BytesRef("lake");
+
+    Input keys[] = new Input[]{
+        new Input("top of the lake", 8, payload)
+    };
+
+    File tempDir = createTempDir("BlendedInfixSuggesterTest");
+
+    Analyzer a = new StandardAnalyzer(CharArraySet.EMPTY_SET);
+    BlendedInfixSuggester suggester = new BlendedInfixSuggester(TEST_VERSION_CURRENT, newFSDirectory(tempDir), a, a,
+                                                                AnalyzingInfixSuggester.DEFAULT_MIN_PREFIX_CHARS,
+                                                                BlendedInfixSuggester.BlenderType.POSITION_LINEAR,
+                                                                BlendedInfixSuggester.DEFAULT_NUM_FACTOR);
+    suggester.build(new InputArrayIterator(keys));
+
+    getInResults(suggester, "of ", payload, 1);
+    getInResults(suggester, "the ", payload, 1);
+    getInResults(suggester, "lake ", payload, 1);
 
     suggester.close();
   }
@@ -181,10 +205,9 @@ public class BlendedInfixSuggesterTest extends LuceneTestCase {
     Analyzer a = new StandardAnalyzer(CharArraySet.EMPTY_SET);
 
     // if factor is small, we don't get the expected element
-    BlendedInfixSuggester suggester = new BlendedInfixSuggester(newFSDirectory(tempDir), a, a,
-                                                                AnalyzingInfixSuggester.DEFAULT_MIN_PREFIX_CHARS,
-                                                                BlendedInfixSuggester.BlenderType.POSITION_RECIPROCAL,
-                                                                BlendedInfixSuggester.DEFAULT_NUM_FACTOR, false);
+    BlendedInfixSuggester suggester = new BlendedInfixSuggester(TEST_VERSION_CURRENT, newFSDirectory(tempDir), a, a,
+                                                                AnalyzingInfixSuggester.DEFAULT_MIN_PREFIX_CHARS, BlendedInfixSuggester.BlenderType.POSITION_RECIPROCAL,
+                                                                BlendedInfixSuggester.DEFAULT_NUM_FACTOR);
     suggester.build(new InputArrayIterator(keys));
 
 

@@ -96,6 +96,7 @@ public class TestCharBlockArray extends FacetTestCase {
     array = CharBlockArray.open(in);
     assertEqualsInternal("GrowingCharArray<->StringBuilder mismatch after flush/load.", builder, array);
     in.close();
+    f.delete();
   }
 
   private static void assertEqualsInternal(String msg, StringBuilder expected, CharBlockArray actual) {

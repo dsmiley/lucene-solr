@@ -18,7 +18,6 @@ package org.apache.lucene.codecs.lucene41;
 
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.Collections;
 
 import org.apache.lucene.store.DataInput;
 import org.apache.lucene.store.DataOutput;
@@ -253,9 +252,5 @@ final class ForUtil implements Accountable {
     }
     return PackedInts.bitsRequired(or);
   }
-  
-  @Override
-  public Iterable<? extends Accountable> getChildResources() {
-    return Collections.emptyList();
-  }
+
 }

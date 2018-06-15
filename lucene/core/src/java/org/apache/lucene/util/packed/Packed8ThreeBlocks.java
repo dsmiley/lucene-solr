@@ -124,6 +124,6 @@ final class Packed8ThreeBlocks extends PackedInts.MutableImpl {
   @Override
   public String toString() {
     return getClass().getSimpleName() + "(bitsPerValue=" + bitsPerValue
-        + ",size=" + size() + ",blocks=" + blocks.length + ")";
+        + ", size=" + size() + ", elements.length=" + blocks.length + ")";
   }
 }

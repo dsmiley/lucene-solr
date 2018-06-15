@@ -20,10 +20,8 @@ package org.apache.lucene.util.junitcompat;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.file.Files;
 
 import org.apache.lucene.util.Constants;
-import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.TestUtil;
 import org.junit.Assert;
@@ -47,11 +45,11 @@ public class TestLeaveFilesIfTestFails extends WithNestedTests {
   }
 
   @Test
-  public void testLeaveFilesIfTestFails() throws IOException {
+  public void testLeaveFilesIfTestFails() {
     Result r = JUnitCore.runClasses(Nested1.class);
     Assert.assertEquals(1, r.getFailureCount());
     Assert.assertTrue(Nested1.file != null && Nested1.file.exists());
-    Files.delete(Nested1.file.toPath());
+    Nested1.file.delete();
   }
   
   public static class Nested2 extends WithNestedTests.AbstractNestedTest {
@@ -77,6 +75,6 @@ public class TestLeaveFilesIfTestFails extends WithNestedTests {
     Assert.assertEquals(1, r.getFailureCount());
 
     Nested2.openFile.close();
-    IOUtils.rm(Nested2.parent);
+    TestUtil.rm(Nested2.parent);
   }  
 }

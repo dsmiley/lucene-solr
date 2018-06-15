@@ -18,10 +18,8 @@ package org.apache.lucene.codecs.blocktree;
  */
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
-import java.util.List;
 import java.util.TreeMap;
 
 import org.apache.lucene.codecs.CodecUtil;
@@ -37,8 +35,6 @@ import org.apache.lucene.index.Terms;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
-import org.apache.lucene.util.Accountable;
-import org.apache.lucene.util.Accountables;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.RamUsageEstimator;
@@ -306,19 +302,13 @@ public class BlockTreeTermsReader extends FieldsProducer {
 
   @Override
   public long ramBytesUsed() {
-    long sizeInBytes = postingsReader.ramBytesUsed();
+    long sizeInByes = BASE_RAM_BYTES_USED
+        + ((postingsReader!=null) ? postingsReader.ramBytesUsed() : 0)
+        + fields.size() * 2L * RamUsageEstimator.NUM_BYTES_OBJECT_REF;
     for(FieldReader reader : fields.values()) {
-      sizeInBytes += reader.ramBytesUsed();
+      sizeInByes += reader.ramBytesUsed();
     }
-    return sizeInBytes;
-  }
-
-  @Override
-  public Iterable<? extends Accountable> getChildResources() {
-    List<Accountable> resources = new ArrayList<>();
-    resources.addAll(Accountables.namedAccountables("field", fields));
-    resources.add(Accountables.namedAccountable("delegate", postingsReader));
-    return Collections.unmodifiableList(resources);
+    return sizeInByes;
   }
 
   @Override
@@ -330,10 +320,5 @@ public class BlockTreeTermsReader extends FieldsProducer {
       // postings
       postingsReader.checkIntegrity();
     }
-  }
-
-  @Override
-  public String toString() {
-    return getClass().getSimpleName() + "(fields=" + fields.size() + ",delegate=" + postingsReader + ")";
   }
 }

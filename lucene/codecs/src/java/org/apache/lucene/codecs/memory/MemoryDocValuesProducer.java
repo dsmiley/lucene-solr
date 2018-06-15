@@ -19,10 +19,7 @@ package org.apache.lucene.codecs.memory;
 
 import java.io.IOException;
 import java.util.Comparator;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -45,8 +42,6 @@ import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.store.ByteArrayDataInput;
 import org.apache.lucene.store.ChecksumIndexInput;
 import org.apache.lucene.store.IndexInput;
-import org.apache.lucene.util.Accountable;
-import org.apache.lucene.util.Accountables;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
@@ -73,23 +68,23 @@ import org.apache.lucene.util.packed.PackedInts;
  */
 class MemoryDocValuesProducer extends DocValuesProducer {
   // metadata maps (just file pointers and minimal stuff)
-  private final Map<String,NumericEntry> numerics = new HashMap<>();
-  private final Map<String,BinaryEntry> binaries = new HashMap<>();
-  private final Map<String,FSTEntry> fsts = new HashMap<>();
-  private final Map<String,SortedSetEntry> sortedSets = new HashMap<>();
-  private final Map<String,SortedNumericEntry> sortedNumerics = new HashMap<>();
+  private final Map<Integer,NumericEntry> numerics = new HashMap<>();
+  private final Map<Integer,BinaryEntry> binaries = new HashMap<>();
+  private final Map<Integer,FSTEntry> fsts = new HashMap<>();
+  private final Map<Integer,SortedSetEntry> sortedSets = new HashMap<>();
+  private final Map<Integer,SortedNumericEntry> sortedNumerics = new HashMap<>();
   private final IndexInput data;
   
   // ram instances we have already loaded
-  private final Map<String,NumericDocValues> numericInstances = new HashMap<>();
-  private final Map<String,BytesAndAddresses> pagedBytesInstances = new HashMap<>();
-  private final Map<String,FST<Long>> fstInstances = new HashMap<>();
-  private final Map<String,FixedBitSet> docsWithFieldInstances = new HashMap<>();
-  private final Map<String,MonotonicBlockPackedReader> addresses = new HashMap<>();
+  private final Map<Integer,NumericDocValues> numericInstances = 
+      new HashMap<>();
+  private final Map<Integer,BytesAndAddresses> pagedBytesInstances =
+      new HashMap<>();
+  private final Map<Integer,FST<Long>> fstInstances =
+      new HashMap<>();
+  private final Map<Integer,Bits> docsWithFieldInstances = new HashMap<>();
+  private final Map<Integer,MonotonicBlockPackedReader> addresses = new HashMap<>();
   
-  private final Map<String,Accountable> numericInfo = new HashMap<>();
-
-  private final int numEntries;
   private final int maxDoc;
   private final AtomicLong ramBytesUsed;
   private final int version;
@@ -122,7 +117,7 @@ class MemoryDocValuesProducer extends DocValuesProducer {
       version = CodecUtil.checkHeader(in, metaCodec, 
                                       VERSION_START,
                                       VERSION_CURRENT);
-      numEntries = readFields(in, state.fieldInfos);
+      readFields(in, state.fieldInfos);
       CodecUtil.checkFooter(in);
       ramBytesUsed = new AtomicLong(RamUsageEstimator.shallowSizeOfInstance(getClass()));
       success = true;
@@ -209,30 +204,24 @@ class MemoryDocValuesProducer extends DocValuesProducer {
     return entry;
   }
   
-  private int readFields(IndexInput meta, FieldInfos infos) throws IOException {
-    int numEntries = 0;
+  private void readFields(IndexInput meta, FieldInfos infos) throws IOException {
     int fieldNumber = meta.readVInt();
     while (fieldNumber != -1) {
-      numEntries++;
-      FieldInfo info = infos.fieldInfo(fieldNumber);
-      if (info == null) {
-        throw new CorruptIndexException("invalid field number: " + fieldNumber + " (resource=" + meta + ")");
-      }
       int fieldType = meta.readByte();
       if (fieldType == NUMBER) {
-        numerics.put(info.name, readNumericEntry(meta));
+        numerics.put(fieldNumber, readNumericEntry(meta));
       } else if (fieldType == BYTES) {
-        binaries.put(info.name, readBinaryEntry(meta));
+        binaries.put(fieldNumber, readBinaryEntry(meta));
       } else if (fieldType == FST) {
-        fsts.put(info.name,readFSTEntry(meta));
+        fsts.put(fieldNumber,readFSTEntry(meta));
       } else if (fieldType == SORTED_SET) {
         SortedSetEntry entry = new SortedSetEntry();
         entry.singleton = false;
-        sortedSets.put(info.name, entry);
+        sortedSets.put(fieldNumber, entry);
       } else if (fieldType == SORTED_SET_SINGLETON) {
         SortedSetEntry entry = new SortedSetEntry();
         entry.singleton = true;
-        sortedSets.put(info.name, entry);
+        sortedSets.put(fieldNumber, entry);
       } else if (fieldType == SORTED_NUMERIC) {
         SortedNumericEntry entry = new SortedNumericEntry();
         entry.singleton = false;
@@ -240,25 +229,24 @@ class MemoryDocValuesProducer extends DocValuesProducer {
         entry.blockSize = meta.readVInt();
         entry.addressOffset = meta.readLong();
         entry.valueCount = meta.readLong();
-        sortedNumerics.put(info.name, entry);
+        sortedNumerics.put(fieldNumber, entry);
       } else if (fieldType == SORTED_NUMERIC_SINGLETON) {
         SortedNumericEntry entry = new SortedNumericEntry();
         entry.singleton = true;
-        sortedNumerics.put(info.name, entry);
+        sortedNumerics.put(fieldNumber, entry);
       } else {
-        throw new CorruptIndexException("invalid entry type: " + fieldType + ", fieldName=" + info.name + ", input=" + meta);
+        throw new CorruptIndexException("invalid entry type: " + fieldType + ", input=" + meta);
       }
       fieldNumber = meta.readVInt();
     }
-    return numEntries;
   }
 
   @Override
   public synchronized NumericDocValues getNumeric(FieldInfo field) throws IOException {
-    NumericDocValues instance = numericInstances.get(field.name);
+    NumericDocValues instance = numericInstances.get(field.number);
     if (instance == null) {
       instance = loadNumeric(field);
-      numericInstances.put(field.name, instance);
+      numericInstances.put(field.number, instance);
     }
     return instance;
   }
@@ -269,28 +257,12 @@ class MemoryDocValuesProducer extends DocValuesProducer {
   }
   
   @Override
-  public synchronized Iterable<? extends Accountable> getChildResources() {
-    List<Accountable> resources = new ArrayList<>();
-    resources.addAll(Accountables.namedAccountables("numeric field", numericInfo));
-    resources.addAll(Accountables.namedAccountables("pagedbytes field", pagedBytesInstances));
-    resources.addAll(Accountables.namedAccountables("term dict field", fstInstances));
-    resources.addAll(Accountables.namedAccountables("missing bitset field", docsWithFieldInstances));
-    resources.addAll(Accountables.namedAccountables("addresses field", addresses));
-    return Collections.unmodifiableList(resources);
-  }
-
-  @Override
   public void checkIntegrity() throws IOException {
     CodecUtil.checksumEntireFile(data);
   }
   
-  @Override
-  public String toString() {
-    return getClass().getSimpleName() + "(entries=" + numEntries + ")";
-  }
-
   private NumericDocValues loadNumeric(FieldInfo field) throws IOException {
-    NumericEntry entry = numerics.get(field.name);
+    NumericEntry entry = numerics.get(field.number);
     data.seek(entry.offset + entry.missingBytes);
     switch (entry.format) {
       case TABLE_COMPRESSED:
@@ -306,7 +278,6 @@ class MemoryDocValuesProducer extends DocValuesProducer {
         final int bitsPerValue = data.readVInt();
         final PackedInts.Reader ordsReader = PackedInts.getReaderNoHeader(data, PackedInts.Format.byId(formatID), entry.packedIntsVersion, (int)entry.count, bitsPerValue);
         ramBytesUsed.addAndGet(RamUsageEstimator.sizeOf(decode) + ordsReader.ramBytesUsed());
-        numericInfo.put(field.name, Accountables.namedAccountable("table compressed", ordsReader));
         return new NumericDocValues() {
           @Override
           public long get(int docID) {
@@ -319,7 +290,6 @@ class MemoryDocValuesProducer extends DocValuesProducer {
         final int bitsPerValueDelta = data.readVInt();
         final PackedInts.Reader deltaReader = PackedInts.getReaderNoHeader(data, PackedInts.Format.byId(formatIDDelta), entry.packedIntsVersion, (int)entry.count, bitsPerValueDelta);
         ramBytesUsed.addAndGet(deltaReader.ramBytesUsed());
-        numericInfo.put(field.name, Accountables.namedAccountable("delta compressed", deltaReader));
         return new NumericDocValues() {
           @Override
           public long get(int docID) {
@@ -330,7 +300,6 @@ class MemoryDocValuesProducer extends DocValuesProducer {
         final int blockSize = data.readVInt();
         final BlockPackedReader reader = new BlockPackedReader(data, entry.packedIntsVersion, blockSize, entry.count, false);
         ramBytesUsed.addAndGet(reader.ramBytesUsed());
-        numericInfo.put(field.name, Accountables.namedAccountable("block compressed", reader));
         return reader;
       case GCD_COMPRESSED:
         final long min = data.readLong();
@@ -339,7 +308,6 @@ class MemoryDocValuesProducer extends DocValuesProducer {
         final int bitsPerValueGCD = data.readVInt();
         final PackedInts.Reader quotientReader = PackedInts.getReaderNoHeader(data, PackedInts.Format.byId(formatIDGCD), entry.packedIntsVersion, (int)entry.count, bitsPerValueGCD);
         ramBytesUsed.addAndGet(quotientReader.ramBytesUsed());
-        numericInfo.put(field.name, Accountables.namedAccountable("gcd compressed", quotientReader));
         return new NumericDocValues() {
           @Override
           public long get(int docID) {
@@ -353,14 +321,14 @@ class MemoryDocValuesProducer extends DocValuesProducer {
 
   @Override
   public BinaryDocValues getBinary(FieldInfo field) throws IOException {
-    BinaryEntry entry = binaries.get(field.name);
+    BinaryEntry entry = binaries.get(field.number);
 
     BytesAndAddresses instance;
     synchronized (this) {
-      instance = pagedBytesInstances.get(field.name);
+      instance = pagedBytesInstances.get(field.number);
       if (instance == null) {
         instance = loadBinary(field);
-        pagedBytesInstances.put(field.name, instance);
+        pagedBytesInstances.put(field.number, instance);
       }
     }
     final PagedBytes.Reader bytesReader = instance.reader;
@@ -395,7 +363,7 @@ class MemoryDocValuesProducer extends DocValuesProducer {
   
   private BytesAndAddresses loadBinary(FieldInfo field) throws IOException {
     BytesAndAddresses bytesAndAddresses = new BytesAndAddresses();
-    BinaryEntry entry = binaries.get(field.name);
+    BinaryEntry entry = binaries.get(field.number);
     data.seek(entry.offset);
     PagedBytes bytes = new PagedBytes(16);
     bytes.copy(data, entry.numBytes);
@@ -411,18 +379,18 @@ class MemoryDocValuesProducer extends DocValuesProducer {
   
   @Override
   public SortedDocValues getSorted(FieldInfo field) throws IOException {
-    final FSTEntry entry = fsts.get(field.name);
+    final FSTEntry entry = fsts.get(field.number);
     if (entry.numOrds == 0) {
       return DocValues.emptySorted();
     }
     FST<Long> instance;
     synchronized(this) {
-      instance = fstInstances.get(field.name);
+      instance = fstInstances.get(field.number);
       if (instance == null) {
         data.seek(entry.offset);
         instance = new FST<>(data, PositiveIntOutputs.getSingleton());
         ramBytesUsed.addAndGet(instance.ramBytesUsed());
-        fstInstances.put(field.name, instance);
+        fstInstances.put(field.number, instance);
       }
     }
     final NumericDocValues docToOrd = getNumeric(field);
@@ -485,21 +453,21 @@ class MemoryDocValuesProducer extends DocValuesProducer {
   
   @Override
   public SortedNumericDocValues getSortedNumeric(FieldInfo field) throws IOException {
-    SortedNumericEntry entry = sortedNumerics.get(field.name);
+    SortedNumericEntry entry = sortedNumerics.get(field.number);
     if (entry.singleton) {
       NumericDocValues values = getNumeric(field);
-      NumericEntry ne = numerics.get(field.name);
-      Bits docsWithField = getMissingBits(field, ne.missingOffset, ne.missingBytes);
+      NumericEntry ne = numerics.get(field.number);
+      Bits docsWithField = getMissingBits(field.number, ne.missingOffset, ne.missingBytes);
       return DocValues.singleton(values, docsWithField);
     } else {
       final NumericDocValues values = getNumeric(field);
       final MonotonicBlockPackedReader addr;
       synchronized (this) {
-        MonotonicBlockPackedReader res = addresses.get(field.name);
+        MonotonicBlockPackedReader res = addresses.get(field.number);
         if (res == null) {
           data.seek(entry.addressOffset);
           res = MonotonicBlockPackedReader.of(data, entry.packedIntsVersion, entry.blockSize, entry.valueCount, false);
-          addresses.put(field.name, res);
+          addresses.put(field.number, res);
         }
         addr = res;
       }
@@ -553,23 +521,23 @@ class MemoryDocValuesProducer extends DocValuesProducer {
   
   @Override
   public SortedSetDocValues getSortedSet(FieldInfo field) throws IOException {
-    SortedSetEntry sortedSetEntry = sortedSets.get(field.name);
+    SortedSetEntry sortedSetEntry = sortedSets.get(field.number);
     if (sortedSetEntry.singleton) {
       return DocValues.singleton(getSorted(field));
     }
     
-    final FSTEntry entry = fsts.get(field.name);
+    final FSTEntry entry = fsts.get(field.number);
     if (entry.numOrds == 0) {
       return DocValues.emptySortedSet(); // empty FST!
     }
     FST<Long> instance;
     synchronized(this) {
-      instance = fstInstances.get(field.name);
+      instance = fstInstances.get(field.number);
       if (instance == null) {
         data.seek(entry.offset);
         instance = new FST<>(data, PositiveIntOutputs.getSingleton());
         ramBytesUsed.addAndGet(instance.ramBytesUsed());
-        fstInstances.put(field.name, instance);
+        fstInstances.put(field.number, instance);
       }
     }
     final BinaryDocValues docToOrds = getBinary(field);
@@ -644,13 +612,13 @@ class MemoryDocValuesProducer extends DocValuesProducer {
     };
   }
   
-  private Bits getMissingBits(FieldInfo field, final long offset, final long length) throws IOException {
+  private Bits getMissingBits(int fieldNumber, final long offset, final long length) throws IOException {
     if (offset == -1) {
       return new Bits.MatchAllBits(maxDoc);
     } else {
-      FixedBitSet instance;
+      Bits instance;
       synchronized(this) {
-        instance = docsWithFieldInstances.get(field.name);
+        instance = docsWithFieldInstances.get(fieldNumber);
         if (instance == null) {
           IndexInput data = this.data.clone();
           data.seek(offset);
@@ -660,7 +628,7 @@ class MemoryDocValuesProducer extends DocValuesProducer {
             bits[i] = data.readLong();
           }
           instance = new FixedBitSet(bits, maxDoc);
-          docsWithFieldInstances.put(field.name, instance);
+          docsWithFieldInstances.put(fieldNumber, instance);
         }
       }
       return instance;
@@ -677,11 +645,11 @@ class MemoryDocValuesProducer extends DocValuesProducer {
       case SORTED:
         return DocValues.docsWithValue(getSorted(field), maxDoc);
       case BINARY:
-        BinaryEntry be = binaries.get(field.name);
-        return getMissingBits(field, be.missingOffset, be.missingBytes);
+        BinaryEntry be = binaries.get(field.number);
+        return getMissingBits(field.number, be.missingOffset, be.missingBytes);
       case NUMERIC:
-        NumericEntry ne = numerics.get(field.name);
-        return getMissingBits(field, ne.missingOffset, ne.missingBytes);
+        NumericEntry ne = numerics.get(field.number);
+        return getMissingBits(field.number, ne.missingOffset, ne.missingBytes);
       default: 
         throw new AssertionError();
     }
@@ -729,28 +697,9 @@ class MemoryDocValuesProducer extends DocValuesProducer {
     long valueCount;
   }
 
-  static class BytesAndAddresses implements Accountable {
+  static class BytesAndAddresses {
     PagedBytes.Reader reader;
     MonotonicBlockPackedReader addresses;
-    
-    @Override
-    public long ramBytesUsed() {
-      long bytesUsed = reader.ramBytesUsed();
-      if (addresses != null) {
-        bytesUsed += addresses.ramBytesUsed();
-      }
-      return bytesUsed;
-    }
-    
-    @Override
-    public Iterable<? extends Accountable> getChildResources() {
-      List<Accountable> resources = new ArrayList<>();
-      if (addresses != null) {
-        resources.add(Accountables.namedAccountable("addresses", addresses));
-      }
-      resources.add(Accountables.namedAccountable("term bytes", reader));
-      return Collections.unmodifiableList(resources);
-    }
   }
 
   // exposes FSTEnum directly as a TermsEnum: avoids binary-search next()

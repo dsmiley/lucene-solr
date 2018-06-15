@@ -37,10 +37,7 @@ import static org.apache.lucene.codecs.lucene410.Lucene410DocValuesConsumer.BLOC
 import java.io.Closeable; // javadocs
 import java.io.IOException;
 import java.util.Comparator;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -64,8 +61,6 @@ import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.store.ChecksumIndexInput;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.RandomAccessInput;
-import org.apache.lucene.util.Accountable;
-import org.apache.lucene.util.Accountables;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.IOUtils;
@@ -77,22 +72,21 @@ import org.apache.lucene.util.packed.MonotonicBlockPackedReader;
 
 /** reader for {@link Lucene410DocValuesFormat} */
 class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable {
-  private final Map<String,NumericEntry> numerics;
-  private final Map<String,BinaryEntry> binaries;
-  private final Map<String,SortedSetEntry> sortedSets;
-  private final Map<String,SortedSetEntry> sortedNumerics;
-  private final Map<String,NumericEntry> ords;
-  private final Map<String,NumericEntry> ordIndexes;
-  private final int numFields;
+  private final Map<Integer,NumericEntry> numerics;
+  private final Map<Integer,BinaryEntry> binaries;
+  private final Map<Integer,SortedSetEntry> sortedSets;
+  private final Map<Integer,SortedSetEntry> sortedNumerics;
+  private final Map<Integer,NumericEntry> ords;
+  private final Map<Integer,NumericEntry> ordIndexes;
   private final AtomicLong ramBytesUsed;
   private final IndexInput data;
   private final int maxDoc;
   private final int version;
 
   // memory-resident structures
-  private final Map<String,MonotonicBlockPackedReader> addressInstances = new HashMap<>();
-  private final Map<String,MonotonicBlockPackedReader> ordIndexInstances = new HashMap<>();
-  private final Map<String,ReverseTermsIndex> reverseIndexInstances = new HashMap<>();
+  private final Map<Integer,MonotonicBlockPackedReader> addressInstances = new HashMap<>();
+  private final Map<Integer,MonotonicBlockPackedReader> ordIndexInstances = new HashMap<>();
+  private final Map<Integer,ReverseTermsIndex> reverseIndexInstances = new HashMap<>();
   
   /** expert: instantiates a new reader */
   Lucene410DocValuesProducer(SegmentReadState state, String dataCodec, String dataExtension, String metaCodec, String metaExtension) throws IOException {
@@ -111,7 +105,7 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
       binaries = new HashMap<>();
       sortedSets = new HashMap<>();
       sortedNumerics = new HashMap<>();
-      numFields = readFields(in, state.fieldInfos);
+      readFields(in, state.fieldInfos);
 
       CodecUtil.checkFooter(in);
       success = true;
@@ -150,110 +144,108 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
     ramBytesUsed = new AtomicLong(RamUsageEstimator.shallowSizeOfInstance(getClass()));
   }
 
-  private void readSortedField(FieldInfo info, IndexInput meta) throws IOException {
+  private void readSortedField(int fieldNumber, IndexInput meta, FieldInfos infos) throws IOException {
     // sorted = binary + numeric
-    if (meta.readVInt() != info.number) {
-      throw new CorruptIndexException("sorted entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+    if (meta.readVInt() != fieldNumber) {
+      throw new CorruptIndexException("sorted entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
     }
     if (meta.readByte() != Lucene410DocValuesFormat.BINARY) {
-      throw new CorruptIndexException("sorted entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+      throw new CorruptIndexException("sorted entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
     }
     BinaryEntry b = readBinaryEntry(meta);
-    binaries.put(info.name, b);
+    binaries.put(fieldNumber, b);
     
-    if (meta.readVInt() != info.number) {
-      throw new CorruptIndexException("sorted entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+    if (meta.readVInt() != fieldNumber) {
+      throw new CorruptIndexException("sorted entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
     }
     if (meta.readByte() != Lucene410DocValuesFormat.NUMERIC) {
-      throw new CorruptIndexException("sorted entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+      throw new CorruptIndexException("sorted entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
     }
     NumericEntry n = readNumericEntry(meta);
-    ords.put(info.name, n);
+    ords.put(fieldNumber, n);
   }
 
-  private void readSortedSetFieldWithAddresses(FieldInfo info, IndexInput meta) throws IOException {
+  private void readSortedSetFieldWithAddresses(int fieldNumber, IndexInput meta, FieldInfos infos) throws IOException {
     // sortedset = binary + numeric (addresses) + ordIndex
-    if (meta.readVInt() != info.number) {
-      throw new CorruptIndexException("sortedset entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+    if (meta.readVInt() != fieldNumber) {
+      throw new CorruptIndexException("sortedset entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
     }
     if (meta.readByte() != Lucene410DocValuesFormat.BINARY) {
-      throw new CorruptIndexException("sortedset entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+      throw new CorruptIndexException("sortedset entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
     }
     BinaryEntry b = readBinaryEntry(meta);
-    binaries.put(info.name, b);
+    binaries.put(fieldNumber, b);
 
-    if (meta.readVInt() != info.number) {
-      throw new CorruptIndexException("sortedset entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+    if (meta.readVInt() != fieldNumber) {
+      throw new CorruptIndexException("sortedset entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
     }
     if (meta.readByte() != Lucene410DocValuesFormat.NUMERIC) {
-      throw new CorruptIndexException("sortedset entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+      throw new CorruptIndexException("sortedset entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
     }
     NumericEntry n1 = readNumericEntry(meta);
-    ords.put(info.name, n1);
+    ords.put(fieldNumber, n1);
 
-    if (meta.readVInt() != info.number) {
-      throw new CorruptIndexException("sortedset entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+    if (meta.readVInt() != fieldNumber) {
+      throw new CorruptIndexException("sortedset entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
     }
     if (meta.readByte() != Lucene410DocValuesFormat.NUMERIC) {
-      throw new CorruptIndexException("sortedset entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+      throw new CorruptIndexException("sortedset entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
     }
     NumericEntry n2 = readNumericEntry(meta);
-    ordIndexes.put(info.name, n2);
+    ordIndexes.put(fieldNumber, n2);
   }
 
-  private int readFields(IndexInput meta, FieldInfos infos) throws IOException {
-    int numFields = 0;
+  private void readFields(IndexInput meta, FieldInfos infos) throws IOException {
     int fieldNumber = meta.readVInt();
     while (fieldNumber != -1) {
-      numFields++;
-      FieldInfo info = infos.fieldInfo(fieldNumber);
-      if (info == null) {
-        // trickier to validate more: because we use multiple entries for "composite" types like sortedset, etc.
+      if (infos.fieldInfo(fieldNumber) == null) {
+        // trickier to validate more: because we re-use for norms, because we use multiple entries
+        // for "composite" types like sortedset, etc.
         throw new CorruptIndexException("Invalid field number: " + fieldNumber + " (resource=" + meta + ")");
       }
       byte type = meta.readByte();
       if (type == Lucene410DocValuesFormat.NUMERIC) {
-        numerics.put(info.name, readNumericEntry(meta));
+        numerics.put(fieldNumber, readNumericEntry(meta));
       } else if (type == Lucene410DocValuesFormat.BINARY) {
         BinaryEntry b = readBinaryEntry(meta);
-        binaries.put(info.name, b);
+        binaries.put(fieldNumber, b);
       } else if (type == Lucene410DocValuesFormat.SORTED) {
-        readSortedField(info, meta);
+        readSortedField(fieldNumber, meta, infos);
       } else if (type == Lucene410DocValuesFormat.SORTED_SET) {
         SortedSetEntry ss = readSortedSetEntry(meta);
-        sortedSets.put(info.name, ss);
+        sortedSets.put(fieldNumber, ss);
         if (ss.format == SORTED_WITH_ADDRESSES) {
-          readSortedSetFieldWithAddresses(info, meta);
+          readSortedSetFieldWithAddresses(fieldNumber, meta, infos);
         } else if (ss.format == SORTED_SINGLE_VALUED) {
           if (meta.readVInt() != fieldNumber) {
-            throw new CorruptIndexException("sortedset entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+            throw new CorruptIndexException("sortedset entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
           }
           if (meta.readByte() != Lucene410DocValuesFormat.SORTED) {
-            throw new CorruptIndexException("sortedset entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+            throw new CorruptIndexException("sortedset entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
           }
-          readSortedField(info, meta);
+          readSortedField(fieldNumber, meta, infos);
         } else {
           throw new AssertionError();
         }
       } else if (type == Lucene410DocValuesFormat.SORTED_NUMERIC) {
         SortedSetEntry ss = readSortedSetEntry(meta);
-        sortedNumerics.put(info.name, ss);
+        sortedNumerics.put(fieldNumber, ss);
         if (meta.readVInt() != fieldNumber) {
-          throw new CorruptIndexException("sortednumeric entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+          throw new CorruptIndexException("sortednumeric entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
         }
         if (meta.readByte() != Lucene410DocValuesFormat.NUMERIC) {
-          throw new CorruptIndexException("sortednumeric entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+          throw new CorruptIndexException("sortednumeric entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
         }
-        numerics.put(info.name, readNumericEntry(meta));
+        numerics.put(fieldNumber, readNumericEntry(meta));
         if (ss.format == SORTED_WITH_ADDRESSES) {
           if (meta.readVInt() != fieldNumber) {
-            throw new CorruptIndexException("sortednumeric entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+            throw new CorruptIndexException("sortednumeric entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
           }
           if (meta.readByte() != Lucene410DocValuesFormat.NUMERIC) {
-            throw new CorruptIndexException("sortednumeric entry for field: " + info.name + " is corrupt (resource=" + meta + ")");
+            throw new CorruptIndexException("sortednumeric entry for field: " + fieldNumber + " is corrupt (resource=" + meta + ")");
           }
           NumericEntry ordIndex = readNumericEntry(meta);
-          ordIndexes.put(info.name, ordIndex);
+          ordIndexes.put(fieldNumber, ordIndex);
         } else if (ss.format != SORTED_SINGLE_VALUED) {
           throw new AssertionError();
         }
@@ -262,7 +254,6 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
       }
       fieldNumber = meta.readVInt();
     }
-    return numFields;
   }
   
   static NumericEntry readNumericEntry(IndexInput meta) throws IOException {
@@ -342,7 +333,7 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
 
   @Override
   public NumericDocValues getNumeric(FieldInfo field) throws IOException {
-    NumericEntry entry = numerics.get(field.name);
+    NumericEntry entry = numerics.get(field.number);
     return getNumeric(entry);
   }
   
@@ -352,22 +343,8 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
   }
   
   @Override
-  public synchronized Iterable<? extends Accountable> getChildResources() {
-    List<Accountable> resources = new ArrayList<>();
-    resources.addAll(Accountables.namedAccountables("addresses field", addressInstances));
-    resources.addAll(Accountables.namedAccountables("ord index field", ordIndexInstances));
-    resources.addAll(Accountables.namedAccountables("reverse index field", reverseIndexInstances));
-    return Collections.unmodifiableList(resources);
-  }
-  
-  @Override
   public void checkIntegrity() throws IOException {
     CodecUtil.checksumEntireFile(data);
-  }
-
-  @Override
-  public String toString() {
-    return getClass().getSimpleName() + "(fields=" + numFields + ")";
   }
 
   LongValues getNumeric(NumericEntry entry) throws IOException {
@@ -408,7 +385,7 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
 
   @Override
   public BinaryDocValues getBinary(FieldInfo field) throws IOException {
-    BinaryEntry bytes = binaries.get(field.name);
+    BinaryEntry bytes = binaries.get(field.number);
     switch(bytes.format) {
       case BINARY_FIXED_UNCOMPRESSED:
         return getFixedBinary(field, bytes);
@@ -444,11 +421,11 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
   
   /** returns an address instance for variable-length binary values. */
   private synchronized MonotonicBlockPackedReader getAddressInstance(FieldInfo field, BinaryEntry bytes) throws IOException {
-    MonotonicBlockPackedReader addresses = addressInstances.get(field.name);
+    MonotonicBlockPackedReader addresses = addressInstances.get(field.number);
     if (addresses == null) {
       data.seek(bytes.addressesOffset);
       addresses = MonotonicBlockPackedReader.of(data, bytes.packedIntsVersion, bytes.blockSize, bytes.count+1, false);
-      addressInstances.put(field.name, addresses);
+      addressInstances.put(field.number, addresses);
       ramBytesUsed.addAndGet(addresses.ramBytesUsed() + RamUsageEstimator.NUM_BYTES_INT);
     }
     return addresses;
@@ -481,12 +458,12 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
   
   /** returns an address instance for prefix-compressed binary values. */
   private synchronized MonotonicBlockPackedReader getIntervalInstance(FieldInfo field, BinaryEntry bytes) throws IOException {
-    MonotonicBlockPackedReader addresses = addressInstances.get(field.name);
+    MonotonicBlockPackedReader addresses = addressInstances.get(field.number);
     if (addresses == null) {
       data.seek(bytes.addressesOffset);
       final long size = (bytes.count + INTERVAL_MASK) >>> INTERVAL_SHIFT;
       addresses = MonotonicBlockPackedReader.of(data, bytes.packedIntsVersion, bytes.blockSize, size, false);
-      addressInstances.put(field.name, addresses);
+      addressInstances.put(field.number, addresses);
       ramBytesUsed.addAndGet(addresses.ramBytesUsed() + RamUsageEstimator.NUM_BYTES_INT);
     }
     return addresses;
@@ -494,7 +471,7 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
   
   /** returns a reverse lookup instance for prefix-compressed binary values. */
   private synchronized ReverseTermsIndex getReverseIndexInstance(FieldInfo field, BinaryEntry bytes) throws IOException {
-    ReverseTermsIndex index = reverseIndexInstances.get(field.name);
+    ReverseTermsIndex index = reverseIndexInstances.get(field.number);
     if (index == null) {
       index = new ReverseTermsIndex();
       data.seek(bytes.reverseIndexOffset);
@@ -504,8 +481,8 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
       PagedBytes pagedBytes = new PagedBytes(15);
       pagedBytes.copy(data, dataSize);
       index.terms = pagedBytes.freeze(true);
-      reverseIndexInstances.put(field.name, index);
-      ramBytesUsed.addAndGet(index.ramBytesUsed());
+      reverseIndexInstances.put(field.number, index);
+      ramBytesUsed.addAndGet(index.termAddresses.ramBytesUsed() + index.terms.ramBytesUsed());
     }
     return index;
   }
@@ -520,9 +497,9 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
 
   @Override
   public SortedDocValues getSorted(FieldInfo field) throws IOException {
-    final int valueCount = (int) binaries.get(field.name).count;
+    final int valueCount = (int) binaries.get(field.number).count;
     final BinaryDocValues binary = getBinary(field);
-    NumericEntry entry = ords.get(field.name);
+    NumericEntry entry = ords.get(field.number);
     final LongValues ordinals = getNumeric(entry);
     return new SortedDocValues() {
 
@@ -563,11 +540,11 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
   
   /** returns an address instance for sortedset ordinal lists */
   private synchronized MonotonicBlockPackedReader getOrdIndexInstance(FieldInfo field, NumericEntry entry) throws IOException {
-    MonotonicBlockPackedReader instance = ordIndexInstances.get(field.name);
+    MonotonicBlockPackedReader instance = ordIndexInstances.get(field.number);
     if (instance == null) {
       data.seek(entry.offset);
       instance = MonotonicBlockPackedReader.of(data, entry.packedIntsVersion, entry.blockSize, entry.count+1, false);
-      ordIndexInstances.put(field.name, instance);
+      ordIndexInstances.put(field.number, instance);
       ramBytesUsed.addAndGet(instance.ramBytesUsed() + RamUsageEstimator.NUM_BYTES_INT);
     }
     return instance;
@@ -575,14 +552,14 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
   
   @Override
   public SortedNumericDocValues getSortedNumeric(FieldInfo field) throws IOException {
-    SortedSetEntry ss = sortedNumerics.get(field.name);
-    NumericEntry numericEntry = numerics.get(field.name);
+    SortedSetEntry ss = sortedNumerics.get(field.number);
+    NumericEntry numericEntry = numerics.get(field.number);
     final LongValues values = getNumeric(numericEntry);
     if (ss.format == SORTED_SINGLE_VALUED) {
       final Bits docsWithField = getMissingBits(numericEntry.missingOffset);
       return DocValues.singleton(values, docsWithField);
     } else if (ss.format == SORTED_WITH_ADDRESSES) {
-      final MonotonicBlockPackedReader ordIndex = getOrdIndexInstance(field, ordIndexes.get(field.name));
+      final MonotonicBlockPackedReader ordIndex = getOrdIndexInstance(field, ordIndexes.get(field.number));
       
       return new SortedNumericDocValues() {
         long startOffset;
@@ -611,7 +588,7 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
 
   @Override
   public SortedSetDocValues getSortedSet(FieldInfo field) throws IOException {
-    SortedSetEntry ss = sortedSets.get(field.name);
+    SortedSetEntry ss = sortedSets.get(field.number);
     if (ss.format == SORTED_SINGLE_VALUED) {
       final SortedDocValues values = getSorted(field);
       return DocValues.singleton(values);
@@ -619,12 +596,12 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
       throw new AssertionError();
     }
 
-    final long valueCount = binaries.get(field.name).count;
+    final long valueCount = binaries.get(field.number).count;
     // we keep the byte[]s and list of ords on disk, these could be large
     final LongBinaryDocValues binary = (LongBinaryDocValues) getBinary(field);
-    final LongValues ordinals = getNumeric(ords.get(field.name));
+    final LongValues ordinals = getNumeric(ords.get(field.number));
     // but the addresses to the ord stream are in RAM
-    final MonotonicBlockPackedReader ordIndex = getOrdIndexInstance(field, ordIndexes.get(field.name));
+    final MonotonicBlockPackedReader ordIndex = getOrdIndexInstance(field, ordIndexes.get(field.number));
     
     return new RandomAccessOrds() {
       long startOffset;
@@ -722,10 +699,10 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
       case SORTED:
         return DocValues.docsWithValue(getSorted(field), maxDoc);
       case BINARY:
-        BinaryEntry be = binaries.get(field.name);
+        BinaryEntry be = binaries.get(field.number);
         return getMissingBits(be.missingOffset);
       case NUMERIC:
-        NumericEntry ne = numerics.get(field.name);
+        NumericEntry ne = numerics.get(field.number);
         return getMissingBits(ne.missingOffset);
       default:
         throw new AssertionError();
@@ -802,27 +779,9 @@ class Lucene410DocValuesProducer extends DocValuesProducer implements Closeable 
   }
   
   // used for reverse lookup to a small range of blocks
-  static class ReverseTermsIndex implements Accountable {
+  static class ReverseTermsIndex {
     public MonotonicBlockPackedReader termAddresses;
     public PagedBytes.Reader terms;
-    
-    @Override
-    public long ramBytesUsed() {
-      return termAddresses.ramBytesUsed() + terms.ramBytesUsed();
-    }
-    
-    @Override
-    public Iterable<? extends Accountable> getChildResources() {
-      List<Accountable> resources = new ArrayList<>();
-      resources.add(Accountables.namedAccountable("term bytes", terms));
-      resources.add(Accountables.namedAccountable("term addresses", termAddresses));
-      return Collections.unmodifiableList(resources);
-    }
-
-    @Override
-    public String toString() {
-      return getClass().getSimpleName() + "(size=" + termAddresses.size() + ")";
-    }
   }
   
   //in the compressed case, we add a few additional operations for

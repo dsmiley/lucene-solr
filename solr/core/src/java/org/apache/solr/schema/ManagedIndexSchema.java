@@ -17,11 +17,6 @@ package org.apache.solr.schema;
  */
 
 import org.apache.commons.io.IOUtils;
-import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.util.CharFilterFactory;
-import org.apache.lucene.analysis.util.TokenFilterFactory;
-import org.apache.lucene.analysis.util.TokenizerFactory;
-import org.apache.solr.analysis.TokenizerChain;
 import org.apache.solr.cloud.ZkController;
 import org.apache.solr.cloud.ZkSolrResourceLoader;
 import org.apache.solr.common.SolrException;
@@ -30,35 +25,25 @@ import org.apache.solr.common.cloud.SolrZkClient;
 import org.apache.solr.core.Config;
 import org.apache.solr.core.SolrConfig;
 import org.apache.solr.core.SolrResourceLoader;
-import org.apache.solr.rest.schema.FieldTypeXmlAdapter;
 import org.apache.solr.util.FileUtils;
-import org.apache.lucene.analysis.util.ResourceLoaderAware;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.data.Stat;
 import org.w3c.dom.Document;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
 
 import javax.xml.xpath.XPath;
-import javax.xml.xpath.XPathConstants;
-import javax.xml.xpath.XPathExpressionException;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /** Solr-managed schema - non-user-editable, but can be mutable via internal and external REST API requests. */
@@ -166,11 +151,8 @@ public final class ManagedIndexSchema extends IndexSchema {
           // Assumption: the path exists
           Stat stat = zkClient.setData(managedSchemaPath, data, schemaZkVersion, true);
           schemaZkVersion = stat.getVersion();
-          log.info("Persisted managed schema version "+schemaZkVersion+" at " + managedSchemaPath);
+          log.info("Persisted managed schema at " + managedSchemaPath);
         } catch (KeeperException.BadVersionException e) {
-
-          log.error("Bad version when trying to persist schema using "+schemaZkVersion+" due to: "+e);
-
           success = false;
           schemaChangedInZk = true;
         }
@@ -192,6 +174,16 @@ public final class ManagedIndexSchema extends IndexSchema {
     return success; 
   }
 
+  @Override
+  public ManagedIndexSchema addField(SchemaField newField) {
+    return addFields(Arrays.asList(newField));
+  }
+
+  @Override
+  public ManagedIndexSchema addField(SchemaField newField, Collection<String> copyFieldNames) {
+    return addFields(Arrays.asList(newField), Collections.singletonMap(newField.getName(), copyFieldNames));
+  }
+
   public class FieldExistsException extends SolrException {
     public FieldExistsException(ErrorCode code, String msg) {
       super(code, msg);
@@ -202,16 +194,6 @@ public final class ManagedIndexSchema extends IndexSchema {
     public SchemaChangedInZkException(ErrorCode code, String msg) {
       super(code, msg);
     }
-  }
-
-  @Override
-  public ManagedIndexSchema addField(SchemaField newField) {
-    return addFields(Arrays.asList(newField));
-  }
-
-  @Override
-  public ManagedIndexSchema addField(SchemaField newField, Collection<String> copyFieldNames) {
-    return addFields(Arrays.asList(newField), Collections.singletonMap(newField.getName(), copyFieldNames));
   }
 
   @Override
@@ -250,82 +232,18 @@ public final class ManagedIndexSchema extends IndexSchema {
             newSchema.registerCopyField(newField.getName(), copyField);
           }
         }
-      }
 
-      // Run the callbacks on SchemaAware now that everything else is done
-      for (SchemaAware aware : newSchema.schemaAware) {
-        aware.inform(newSchema);
-      }
-      newSchema.refreshAnalyzers();
-      success = newSchema.persistManagedSchema(false); // don't just create - update it if it already exists
-      if (success) {
-        log.debug("Added field(s): {}", newFields);
-      } else {
-        log.error("Failed to add field(s): {}", newFields);
-        newSchema = null;
-      }
-    } else {
-      String msg = "This ManagedIndexSchema is not mutable.";
-      log.error(msg);
-      throw new SolrException(ErrorCode.SERVER_ERROR, msg);
-    }
-    return newSchema;
-  }
-
-  @Override
-  public IndexSchema addDynamicField(SchemaField newDynamicField) {
-    return addDynamicFields(Arrays.asList(newDynamicField));
-  }
-
-  @Override
-  public IndexSchema addDynamicField(SchemaField newDynamicField, Collection<String> copyFieldNames) {
-    return addDynamicFields(Arrays.asList(newDynamicField),
-        Collections.singletonMap(newDynamicField.getName(), copyFieldNames));
-  }
-
-  @Override
-  public ManagedIndexSchema addDynamicFields(Collection<SchemaField> newDynamicFields) {
-    return addDynamicFields(newDynamicFields, Collections.<String,Collection<String>>emptyMap());
-  }
-
-  @Override
-  public ManagedIndexSchema addDynamicFields(Collection<SchemaField> newDynamicFields, 
-                                             Map<String,Collection<String>> copyFieldNames) {
-    ManagedIndexSchema newSchema = null;
-    if (isMutable) {
-      boolean success = false;
-      if (copyFieldNames == null){
-        copyFieldNames = Collections.emptyMap();
-      }
-      newSchema = shallowCopy(true);
-
-      for (SchemaField newDynamicField : newDynamicFields) {
-        List<DynamicField> dFields = new ArrayList<>(Arrays.asList(newSchema.dynamicFields));
-        if (isDuplicateDynField(dFields, newDynamicField)) {
-          String msg = "Dynamic field '" + newDynamicField.getName() + "' already exists.";
-          throw new FieldExistsException(ErrorCode.BAD_REQUEST, msg);
+        // Run the callbacks on SchemaAware now that everything else is done
+        for (SchemaAware aware : newSchema.schemaAware) {
+          aware.inform(newSchema);
         }
-        dFields.add(new DynamicField(newDynamicField));
-        newSchema.dynamicFields = dynamicFieldListToSortedArray(dFields);
-        
-        Collection<String> copyFields = copyFieldNames.get(newDynamicField.getName());
-        if (copyFields != null) {
-          for (String copyField : copyFields) {
-            newSchema.registerCopyField(newDynamicField.getName(), copyField);
-          }
+        newSchema.refreshAnalyzers();
+        success = newSchema.persistManagedSchema(false); // don't just create - update it if it already exists
+        if (success) {
+          log.debug("Added field(s): {}", newFields);
+        } else {
+          log.error("Failed to add field(s): {}", newFields);
         }
-      }
-
-      // Run the callbacks on SchemaAware now that everything else is done
-      for (SchemaAware aware : newSchema.schemaAware) {
-        aware.inform(newSchema);
-      }
-      newSchema.refreshAnalyzers();
-      success = newSchema.persistManagedSchema(false); // don't just create - update it if it already exists
-      if (success) {
-        log.debug("Added dynamic field(s): {}", newDynamicFields);
-      } else {
-        log.error("Failed to add dynamic field(s): {}", newDynamicFields);
       }
     } else {
       String msg = "This ManagedIndexSchema is not mutable.";
@@ -363,93 +281,7 @@ public final class ManagedIndexSchema extends IndexSchema {
     }
     return newSchema;
   }
-  
-  public ManagedIndexSchema addFieldType(FieldType fieldType) {
-    return addFieldTypes(Collections.singletonList(fieldType));
-  }  
 
-  public ManagedIndexSchema addFieldTypes(List<FieldType> fieldTypeList) {
-    if (!isMutable) {
-      String msg = "This ManagedIndexSchema is not mutable.";
-      log.error(msg);
-      throw new SolrException(ErrorCode.SERVER_ERROR, msg);    
-    }
-
-    ManagedIndexSchema newSchema = shallowCopy(true);
-
-    // we shallow copied fieldTypes, but since we're changing them, we need to do a true
-    // deep copy before adding the new field types
-    HashMap<String,FieldType> clone =
-        (HashMap<String,FieldType>)((HashMap<String,FieldType>)newSchema.fieldTypes).clone();
-    newSchema.fieldTypes = clone;
-
-    // do a first pass to validate the field types don't exist already
-    for (FieldType fieldType : fieldTypeList) {    
-      String typeName = fieldType.getTypeName();
-      if (newSchema.getFieldTypeByName(typeName) != null) {
-        throw new FieldExistsException(ErrorCode.BAD_REQUEST,
-            "Field type '" + typeName + "' already exists!");
-      }
-      
-      newSchema.fieldTypes.put(typeName, fieldType);
-    }
-
-    // Run the callbacks on SchemaAware now that everything else is done
-    for (SchemaAware aware : newSchema.schemaAware)
-      aware.inform(newSchema);
-    
-    // looks good for the add, notify ResoureLoaderAware objects
-    for (FieldType fieldType : fieldTypeList) {      
-          
-      // must inform any sub-components used in the 
-      // tokenizer chain if they are ResourceLoaderAware    
-      if (fieldType.supportsAnalyzers()) {
-        Analyzer indexAnalyzer = fieldType.getIndexAnalyzer();
-        if (indexAnalyzer != null && indexAnalyzer instanceof TokenizerChain)
-          informResourceLoaderAwareObjectsInChain((TokenizerChain)indexAnalyzer);
-        
-        Analyzer queryAnalyzer = fieldType.getQueryAnalyzer();
-        // ref comparison is correct here (vs. equals) as they may be the same
-        // object in which case, we don't need to inform twice ... however, it's
-        // actually safe to call inform multiple times on an object anyway
-        if (queryAnalyzer != null && 
-            queryAnalyzer != indexAnalyzer && 
-            queryAnalyzer instanceof TokenizerChain)
-          informResourceLoaderAwareObjectsInChain((TokenizerChain)queryAnalyzer);
-
-        // if fieldType is a TextField, it might have a multi-term analyzer
-        if (fieldType instanceof TextField) {
-          TextField textFieldType = (TextField)fieldType;
-          Analyzer multiTermAnalyzer = textFieldType.getMultiTermAnalyzer();
-          if (multiTermAnalyzer != null && multiTermAnalyzer != indexAnalyzer &&
-              multiTermAnalyzer != queryAnalyzer && multiTermAnalyzer instanceof TokenizerChain)
-            informResourceLoaderAwareObjectsInChain((TokenizerChain)multiTermAnalyzer);
-        }
-      }      
-    }
-
-    newSchema.refreshAnalyzers();
-    
-    boolean success = newSchema.persistManagedSchema(false);
-    if (success) {
-      if (log.isDebugEnabled()) {
-        StringBuilder fieldTypeNames = new StringBuilder();
-        for (int i=0; i < fieldTypeList.size(); i++) {
-          if (i > 0) fieldTypeNames.append(", ");
-          fieldTypeNames.append(fieldTypeList.get(i).typeName);
-        }
-        log.debug("Added field types: {}", fieldTypeNames.toString());
-      }
-    } else {
-      // this is unlikely to happen as most errors are handled as exceptions in the persist code
-      log.error("Failed to add field types: {}", fieldTypeList);
-      throw new SolrException(ErrorCode.SERVER_ERROR, 
-          "Failed to persist updated schema due to underlying storage issue; check log for more details!");
-    }
-    
-    return newSchema;
-  }  
-  
   @Override
   public SchemaField newField(String fieldName, String fieldType, Map<String,?> options) {
     SchemaField sf; 
@@ -484,107 +316,6 @@ public final class ManagedIndexSchema extends IndexSchema {
     return sf;
   }
 
-  @Override
-  public SchemaField newDynamicField(String fieldNamePattern, String fieldType, Map<String,?> options) {
-    SchemaField sf;
-    if (isMutable) {
-      try {
-        FieldType type = getFieldTypeByName(fieldType);
-        if (null == type) {
-          String msg = "Dynamic field '" + fieldNamePattern + "': Field type '" + fieldType + "' not found.";
-          log.error(msg);
-          throw new SolrException(ErrorCode.BAD_REQUEST, msg);
-        }
-        sf = SchemaField.create(fieldNamePattern, type, options);
-        if ( ! isValidDynamicField(Arrays.asList(dynamicFields), sf)) {
-          String msg =  "Invalid dynamic field '" + fieldNamePattern + "'";
-          log.error(msg);
-          throw new SolrException(ErrorCode.BAD_REQUEST, msg);
-        }
-      } catch (SolrException e) {
-        throw e;
-      } catch (Exception e) {
-        throw new SolrException(ErrorCode.BAD_REQUEST, e);
-      }
-    } else {
-      String msg = "This ManagedIndexSchema is not mutable.";
-      log.error(msg);
-      throw new SolrException(ErrorCode.SERVER_ERROR, msg);
-    }
-    return sf;
-  }
-
-  @Override
-  public FieldType newFieldType(String typeName, String className, Map<String, ?> options) {
-    if (!isMutable) {
-      String msg = "This ManagedIndexSchema is not mutable.";
-      log.error(msg);
-      throw new SolrException(ErrorCode.SERVER_ERROR, msg);
-    }
-
-    if (getFieldTypeByName(typeName) != null) {
-      String msg = "Field type '" + typeName + "' already exists.";
-      log.error(msg);
-      throw new SolrException(ErrorCode.BAD_REQUEST, msg);
-    }
-
-    // build the new FieldType using the existing FieldTypePluginLoader framework
-    // which expects XML, so we use a JSON to XML adapter to transform the JSON object
-    // provided in the request into the XML format supported by the plugin loader
-    Map<String, FieldType> newFieldTypes = new HashMap<String, FieldType>();
-    List<SchemaAware> schemaAwareList = new ArrayList<SchemaAware>();
-    FieldTypePluginLoader typeLoader = new FieldTypePluginLoader(this, newFieldTypes, schemaAwareList);
-    typeLoader.loadSingle(loader, FieldTypeXmlAdapter.toNode(options));
-    FieldType ft = newFieldTypes.get(typeName);
-    if (!schemaAwareList.isEmpty())
-      schemaAware.addAll(schemaAwareList);
-
-    return ft;
-  }
-
-  /**
-   * After creating a new FieldType, it may contain components that implement
-   * the ResourceLoaderAware interface, which need to be informed after they
-   * are loaded (as they depend on this callback to complete initialization work)
-   */
-  protected void informResourceLoaderAwareObjectsInChain(TokenizerChain chain) {
-    CharFilterFactory[] charFilters = chain.getCharFilterFactories();
-    if (charFilters != null) {
-      for (CharFilterFactory next : charFilters) {
-        if (next instanceof ResourceLoaderAware) {
-          try {
-            ((ResourceLoaderAware) next).inform(loader);
-          } catch (IOException e) {
-            throw new SolrException(ErrorCode.SERVER_ERROR, e);
-          }
-        }
-      }
-    }
-
-    TokenizerFactory tokenizerFactory = chain.getTokenizerFactory();
-    if (tokenizerFactory != null && tokenizerFactory instanceof ResourceLoaderAware) {
-      try {
-        ((ResourceLoaderAware) tokenizerFactory).inform(loader);
-      } catch (IOException e) {
-        throw new SolrException(ErrorCode.SERVER_ERROR, e);
-      }
-    }
-
-    TokenFilterFactory[] filters = chain.getTokenFilterFactories();
-    if (filters != null) {
-      for (TokenFilterFactory next : filters) {
-        if (next instanceof ResourceLoaderAware) {
-          try {
-            ((ResourceLoaderAware) next).inform(loader);
-          } catch (IOException e) {
-            throw new SolrException(ErrorCode.SERVER_ERROR, e);
-          }
-        }
-      }
-    }
-  }
-  
-
   /** 
    * Called from ZkIndexSchemaReader to merge the fields from the serialized managed schema
    * on ZooKeeper with the local managed schema.
@@ -600,10 +331,6 @@ public final class ManagedIndexSchema extends IndexSchema {
       Config schemaConf = new Config(loader, SCHEMA, inputSource, SLASH+SCHEMA+SLASH);
       Document document = schemaConf.getDocument();
       final XPath xpath = schemaConf.getXPath();
-
-      // create a unified collection of field types from zk and in the local
-      newSchema.mergeFieldTypesFromZk(document, xpath);
-
       newSchema.loadFields(document, xpath);
       // let's completely rebuild the copy fields from the schema in ZK.
       // create new copyField-related objects so we don't affect the
@@ -701,24 +428,5 @@ public final class ManagedIndexSchema extends IndexSchema {
   @Override
   public Object getSchemaUpdateLock() {
     return schemaUpdateLock;
-  }
-
-  /**
-   * Loads FieldType objects defined in the schema.xml document.
-   *
-   * @param document Schema XML document where field types are defined.
-   * @param xpath Used for evaluating xpath expressions to find field types defined in the schema.xml.
-   * @throws javax.xml.xpath.XPathExpressionException if an error occurs when finding field type elements in the document.
-   */
-  protected synchronized void mergeFieldTypesFromZk(Document document, XPath xpath)
-      throws XPathExpressionException
-  {
-    Map<String, FieldType> newFieldTypes = new HashMap<String, FieldType>();
-    FieldTypePluginLoader typeLoader = new FieldTypePluginLoader(this, newFieldTypes, schemaAware);
-    String expression = getFieldTypeXPathExpressions();
-    NodeList nodes = (NodeList) xpath.evaluate(expression, document, XPathConstants.NODESET);
-    typeLoader.load(loader, nodes);
-    for (String newTypeName : newFieldTypes.keySet())
-      fieldTypes.put(newTypeName, newFieldTypes.get(newTypeName));
   }
 }

@@ -25,7 +25,6 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.MockDirectoryWrapper;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.TestUtil;
-import org.apache.lucene.util.Version;
 
 public class TestIndexSplitter extends LuceneTestCase {
   public void test() throws Exception {
@@ -43,7 +42,7 @@ public class TestIndexSplitter extends LuceneTestCase {
     mergePolicy.setMaxCFSSegmentSizeMB(Double.POSITIVE_INFINITY);
     IndexWriter iw = new IndexWriter(
         fsDir,
-        new IndexWriterConfig(Version.LATEST, new MockAnalyzer(random())).
+        new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random())).
             setOpenMode(OpenMode.CREATE).
             setMergePolicy(mergePolicy)
     );
@@ -79,7 +78,7 @@ public class TestIndexSplitter extends LuceneTestCase {
     // now test cmdline
     File destDir2 = createTempDir(LuceneTestCase.getTestClass().getSimpleName());
     IndexSplitter.main(new String[] {dir.getAbsolutePath(), destDir2.getAbsolutePath(), splitSegName});
-    assertEquals(4, destDir2.listFiles().length);
+    assertEquals(5, destDir2.listFiles().length);
     Directory fsDirDest2 = newFSDirectory(destDir2);
     r = DirectoryReader.open(fsDirDest2);
     assertEquals(50, r.maxDoc());

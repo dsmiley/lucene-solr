@@ -37,7 +37,6 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.MockDirectoryWrapper;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.TestUtil;
-import org.apache.lucene.util.Version;
 
 /*
   Verify we can read the pre-2.1 file format, do searches
@@ -273,6 +272,8 @@ public class TestDeletionPolicy extends LuceneTestCase {
     String fileName = IndexFileNames.fileNameFromGeneration(IndexFileNames.SEGMENTS,
                                                             "",
                                                             gen);
+    dir.deleteFile(IndexFileNames.SEGMENTS_GEN);
+
     boolean oneSecondResolution = true;
 
     while(gen > 0) {
@@ -376,6 +377,7 @@ public class TestDeletionPolicy extends LuceneTestCase {
 
       // Simplistic check: just verify all segments_N's still
       // exist, and, I can open a reader on each:
+      dir.deleteFile(IndexFileNames.SEGMENTS_GEN);
       long gen = SegmentInfos.getLastCommitGeneration(dir);
       while(gen > 0) {
         IndexReader reader = DirectoryReader.open(dir);
@@ -597,6 +599,7 @@ public class TestDeletionPolicy extends LuceneTestCase {
 
       // Simplistic check: just verify only the past N segments_N's still
       // exist, and, I can open a reader on each:
+      dir.deleteFile(IndexFileNames.SEGMENTS_GEN);
       long gen = SegmentInfos.getLastCommitGeneration(dir);
       for(int i=0;i<N+1;i++) {
         try {
@@ -664,7 +667,7 @@ public class TestDeletionPolicy extends LuceneTestCase {
         }
         // this is a commit
         writer.close();
-        conf = new IndexWriterConfig(Version.LATEST, new MockAnalyzer(random()))
+        conf = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()))
           .setIndexDeletionPolicy(policy)
           .setMergePolicy(NoMergePolicy.INSTANCE);
         writer = new IndexWriter(dir, conf);
@@ -699,6 +702,7 @@ public class TestDeletionPolicy extends LuceneTestCase {
       // exist, and, I can open a reader on each:
       long gen = SegmentInfos.getLastCommitGeneration(dir);
 
+      dir.deleteFile(IndexFileNames.SEGMENTS_GEN);
       int expectedCount = 0;
       
       rwReader.close();

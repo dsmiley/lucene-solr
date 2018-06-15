@@ -87,7 +87,7 @@ public class TestFilesystemResourceLoader extends LuceneTestCase {
       assertClasspathDelegation(rl);
       assertNotFound(rl);
     } finally {
-      IOUtils.rm(base);
+      TestUtil.rm(base);
     }
   }
   

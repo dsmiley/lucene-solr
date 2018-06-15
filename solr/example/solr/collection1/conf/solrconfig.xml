@@ -35,7 +35,7 @@
        that you fully re-index after changing this setting as it can
        affect both how text is indexed and queried.
   -->
-  <luceneMatchVersion>4.11.0</luceneMatchVersion>
+  <luceneMatchVersion>4.10.4</luceneMatchVersion>
 
   <!-- <lib/> directives can be used to instruct Solr to load any Jars
        identified and use them to resolve any "plugins" specified in
@@ -72,17 +72,17 @@
        The examples below can be used to load some solr-contribs along 
        with their external dependencies.
     -->
-  <lib dir="../../../contrib/extraction/lib" regex=".*\.jar" />
-  <lib dir="../../../dist/" regex="solr-cell-\d.*\.jar" />
+  <lib dir="${solr.install.dir:../../..}/contrib/extraction/lib" regex=".*\.jar" />
+  <lib dir="${solr.install.dir:../../..}/dist/" regex="solr-cell-\d.*\.jar" />
 
-  <lib dir="../../../contrib/clustering/lib/" regex=".*\.jar" />
-  <lib dir="../../../dist/" regex="solr-clustering-\d.*\.jar" />
+  <lib dir="${solr.install.dir:../../..}/contrib/clustering/lib/" regex=".*\.jar" />
+  <lib dir="${solr.install.dir:../../..}/dist/" regex="solr-clustering-\d.*\.jar" />
 
-  <lib dir="../../../contrib/langid/lib/" regex=".*\.jar" />
-  <lib dir="../../../dist/" regex="solr-langid-\d.*\.jar" />
+  <lib dir="${solr.install.dir:../../..}/contrib/langid/lib/" regex=".*\.jar" />
+  <lib dir="${solr.install.dir:../../..}/dist/" regex="solr-langid-\d.*\.jar" />
 
-  <lib dir="../../../contrib/velocity/lib" regex=".*\.jar" />
-  <lib dir="../../../dist/" regex="solr-velocity-\d.*\.jar" />
+  <lib dir="${solr.install.dir:../../..}/contrib/velocity/lib" regex=".*\.jar" />
+  <lib dir="${solr.install.dir:../../..}/dist/" regex="solr-velocity-\d.*\.jar" />
 
   <!-- an exact 'path' can be used instead of a 'dir' to specify a 
        specific jar file.  This will cause a serious error to be logged 
@@ -840,6 +840,7 @@
      <lst name="defaults">
        <str name="echoParams">explicit</str>
        <int name="rows">10</int>
+       <str name="df">text</str>
      </lst>
     <!-- In addition to defaults, "appends" params can be specified
          to identify values which should be appended to the list of
@@ -972,6 +973,7 @@
           text^0.5 features^1.0 name^1.2 sku^1.5 id^10.0 manu^1.1 cat^1.4
           title^10.0 description^5.0 keywords^5.0 author^2.0 resourcename^1.0
        </str>
+       <str name="df">text</str>
        <str name="mm">100%</str>
        <str name="q.alt">*:*</str>
        <str name="rows">10</str>
@@ -1064,13 +1066,18 @@
        This handler will pick a response format to match the input
        if the 'wt' parameter is not explicit
     -->
-  <!--<requestHandler name="/update" class="solr.UpdateRequestHandler">
-  </requestHandler>-->
-  <paramSet path="/update/**,/query,/select,/tvrh,/elevate,/spell,/browse">
-    <lst name="defaults">
-      <str name="df">text</str>
-    </lst>
-  </paramSet>
+  <requestHandler name="/update" class="solr.UpdateRequestHandler">
+    <!-- See below for information on defining
+         updateRequestProcessorChains that can be used by name
+         on each Update Request
+      -->
+    <!--
+       <lst name="defaults">
+         <str name="update.chain">dedupe</str>
+       </lst>
+       -->
+  </requestHandler>
+
   <!-- The following are implicitly added
   <requestHandler name="/update/json" class="solr.UpdateRequestHandler">
         <lst name="defaults">
@@ -1398,6 +1405,7 @@
     -->
   <requestHandler name="/spell" class="solr.SearchHandler" startup="lazy">
     <lst name="defaults">
+      <str name="df">text</str>
       <!-- Solr will use suggestions from both the 'default' spellchecker
            and from the 'wordbreak' spellchecker and combine them.
            collations (re-written queries) can include a combination of
@@ -1419,11 +1427,12 @@
     </arr>
   </requestHandler>
 
+  <!-- This causes long startup times on big indexes, even when never used.  See SOLR-6679
   <searchComponent name="suggest" class="solr.SuggestComponent">
-  	<lst name="suggester">
+    <lst name="suggester">
       <str name="name">mySuggester</str>
-      <str name="lookupImpl">FuzzyLookupFactory</str>      <!-- org.apache.solr.spelling.suggest.fst -->
-      <str name="dictionaryImpl">DocumentDictionaryFactory</str>     <!-- org.apache.solr.spelling.suggest.HighFrequencyDictionaryFactory --> 
+      <str name="lookupImpl">FuzzyLookupFactory</str>
+      <str name="dictionaryImpl">DocumentDictionaryFactory</str>
       <str name="field">cat</str>
       <str name="weightField">price</str>
       <str name="suggestAnalyzerFieldType">string</str>
@@ -1439,6 +1448,8 @@
       <str>suggest</str>
     </arr>
   </requestHandler>
+  -->
+
   <!-- Term Vector Component
 
        http://wiki.apache.org/solr/TermVectorComponent
@@ -1454,6 +1465,7 @@
     -->
   <requestHandler name="/tvrh" class="solr.SearchHandler" startup="lazy">
     <lst name="defaults">
+      <str name="df">text</str>
       <bool name="tv">true</bool>
     </lst>
     <arr name="last-components">
@@ -1599,6 +1611,7 @@
   <requestHandler name="/elevate" class="solr.SearchHandler" startup="lazy">
     <lst name="defaults">
       <str name="echoParams">explicit</str>
+      <str name="df">text</str>
     </lst>
     <arr name="last-components">
       <str>elevator</str>

@@ -21,10 +21,9 @@ package org.apache.solr.core;
 import org.apache.lucene.index.IndexDeletionPolicy;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.util.Version;
+import org.apache.solr.cloud.ZkSolrResourceLoader;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.SolrException.ErrorCode;
-import org.apache.solr.common.util.NamedList;
-import org.apache.solr.common.util.StrUtils;
 import org.apache.solr.handler.component.SearchComponent;
 import org.apache.solr.request.SolrRequestHandler;
 import org.apache.solr.response.QueryResponseWriter;
@@ -59,13 +58,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -86,7 +82,7 @@ public class SolrConfig extends Config {
   
   public static final String DEFAULT_CONF_FILE = "solrconfig.xml";
 
-  static enum PluginOpts {
+  static enum PluginOpts { 
     MULTI_OK, 
     REQUIRE_NAME,
     REQUIRE_CLASS,
@@ -149,7 +145,12 @@ public class SolrConfig extends Config {
       return new SolrConfig(loader, name, null);
     }
     catch (Exception e) {
-      String resource = loader.getConfigDir() + name;
+      String resource;
+      if (loader instanceof ZkSolrResourceLoader) {
+        resource = name;
+      } else {
+        resource = loader.getConfigDir() + name;
+      }
       throw new SolrException(ErrorCode.SERVER_ERROR, "Error loading solr config from " + resource, e);
     }
   }
@@ -310,27 +311,12 @@ public class SolrConfig extends Config {
          "requestDispatcher/@handleSelect", true ); 
      
      addHttpRequestToContext = getBool( 
-         "requestDispatcher/requestParsers/@addHttpRequestToContext", false );
-
-    loadPluginInfo(ParamSet.class,ParamSet.TYPE, MULTI_OK);
-    List<PluginInfo> paramSetInfos =  pluginStore.get(ParamSet.class.getName()) ;
-    if(paramSetInfos!=null){
-      Map<String,ParamSet> paramSets = new HashMap<>();
-      for (PluginInfo p : paramSetInfos) {
-        ParamSet paramSet = new ParamSet(p);
-        paramSets.put(paramSet.name == null ? String.valueOf(paramSet.hashCode()) : paramSet.name , paramSet );
-      }
-      this.paramSets = Collections.unmodifiableMap(paramSets);
-
-    }
+         "requestDispatcher/requestParsers/@addHttpRequestToContext", false ); 
 
     solrRequestParsers = new SolrRequestParsers(this);
     Config.log.info("Loaded SolrConfig: " + name);
   }
-  private Map<String,ParamSet>  paramSets = Collections.emptyMap();
-  public Map<String, ParamSet> getParamSets() {
-    return paramSets;
-  }
+
   protected UpdateHandlerInfo loadUpdatehandlerInfo() {
     return new UpdateHandlerInfo(get("updateHandler/@class",null),
             getInt("updateHandler/autoCommit/maxDocs",-1),
@@ -627,6 +613,4 @@ public class SolrConfig extends Config {
   public boolean isEnableRemoteStreams() {
     return enableRemoteStreams;
   }
-
-
 }

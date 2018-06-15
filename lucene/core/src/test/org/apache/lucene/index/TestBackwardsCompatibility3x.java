@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Random;
 
 import org.apache.lucene.analysis.MockAnalyzer;
+import org.apache.lucene.codecs.CodecUtil;
 import org.apache.lucene.document.BinaryDocValuesField;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.DoubleDocValuesField;
@@ -53,11 +54,12 @@ import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.BaseDirectoryWrapper;
 import org.apache.lucene.store.Directory;
+import org.apache.lucene.store.IOContext;
+import org.apache.lucene.store.IndexOutput;
 import org.apache.lucene.store.MockDirectoryWrapper;
 import org.apache.lucene.store.RAMDirectory;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.LuceneTestCase.SuppressCodecs;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.TestUtil;
@@ -254,7 +256,7 @@ public class TestBackwardsCompatibility3x extends LuceneTestCase {
       }
       Directory dir = newDirectory(oldIndexDirs.get(name));
       IndexWriter w = new IndexWriter(dir, new IndexWriterConfig(
-          Version.LATEST, new MockAnalyzer(random())));
+          TEST_VERSION_CURRENT, new MockAnalyzer(random())));
       w.forceMerge(1);
       w.close();
       
@@ -333,7 +335,7 @@ public class TestBackwardsCompatibility3x extends LuceneTestCase {
       assertEquals(35, ir.numDocs());
       ir.close();
 
-      IndexWriter iw = new IndexWriter(dir, new IndexWriterConfig(Version.LATEST, null));
+      IndexWriter iw = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, null));
       iw.deleteDocuments(new Term("id", "3"));
       iw.close();
 
@@ -342,7 +344,7 @@ public class TestBackwardsCompatibility3x extends LuceneTestCase {
       ir.close();
 
       // Delete all but 1 document:
-      iw = new IndexWriter(dir, new IndexWriterConfig(Version.LATEST, null));
+      iw = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, null));
       for(int i=0;i<35;i++) {
         iw.deleteDocuments(new Term("id", ""+i));
       }
@@ -573,13 +575,13 @@ public class TestBackwardsCompatibility3x extends LuceneTestCase {
   public File createIndex(String dirName, boolean doCFS, boolean fullyMerged) throws IOException {
     // we use a real directory name that is not cleaned up, because this method is only used to create backwards indexes:
     File indexDir = new File("/tmp/4x", dirName);
-    IOUtils.rm(indexDir);
+    TestUtil.rm(indexDir);
     Directory dir = newFSDirectory(indexDir);
     LogByteSizeMergePolicy mp = new LogByteSizeMergePolicy();
     mp.setNoCFSRatio(doCFS ? 1.0 : 0.0);
     mp.setMaxCFSSegmentSizeMB(Double.POSITIVE_INFINITY);
     // TODO: remove randomness
-    IndexWriterConfig conf = new IndexWriterConfig(Version.LATEST, new MockAnalyzer(random()))
+    IndexWriterConfig conf = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()))
       .setMaxBufferedDocs(10).setMergePolicy(mp).setUseCompoundFile(doCFS);
     IndexWriter writer = new IndexWriter(dir, conf);
     
@@ -597,7 +599,7 @@ public class TestBackwardsCompatibility3x extends LuceneTestCase {
       mp = new LogByteSizeMergePolicy();
       mp.setNoCFSRatio(doCFS ? 1.0 : 0.0);
       // TODO: remove randomness
-      conf = new IndexWriterConfig(Version.LATEST, new MockAnalyzer(random()))
+      conf = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()))
         .setMaxBufferedDocs(10).setMergePolicy(mp).setUseCompoundFile(doCFS);
       writer = new IndexWriter(dir, conf);
       addNoProxDoc(writer);
@@ -861,11 +863,7 @@ public class TestBackwardsCompatibility3x extends LuceneTestCase {
         System.out.println("testUpgradeOldSingleSegmentIndexWithAdditions: index=" +name);
       }
       Directory dir = newDirectory(oldIndexDirs.get(name));
-      if (dir instanceof MockDirectoryWrapper) {
-        // we need to ensure we delete old commits for this test,
-        // otherwise IndexUpgrader gets angry
-        ((MockDirectoryWrapper)dir).setEnableVirusScanner(false);
-      }
+
       assertEquals("Original index must be single segment", 1, getNumberOfSegments(dir));
 
       // create a bunch of dummy segments
@@ -874,7 +872,7 @@ public class TestBackwardsCompatibility3x extends LuceneTestCase {
       for (int i = 0; i < 3; i++) {
         // only use Log- or TieredMergePolicy, to make document addition predictable and not suddenly merge:
         MergePolicy mp = random().nextBoolean() ? newLogMergePolicy() : newTieredMergePolicy();
-        IndexWriterConfig iwc = new IndexWriterConfig(Version.LATEST, new MockAnalyzer(random()))
+        IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()))
           .setMergePolicy(mp);
         IndexWriter w = new IndexWriter(ramDir, iwc);
         // add few more docs:
@@ -887,7 +885,7 @@ public class TestBackwardsCompatibility3x extends LuceneTestCase {
       // add dummy segments (which are all in current
       // version) to single segment index
       MergePolicy mp = random().nextBoolean() ? newLogMergePolicy() : newTieredMergePolicy();
-      IndexWriterConfig iwc = new IndexWriterConfig(Version.LATEST, null)
+      IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, null)
         .setMergePolicy(mp);
       IndexWriter w = new IndexWriter(dir, iwc);
       w.addIndexes(ramDir);
@@ -1018,6 +1016,73 @@ public class TestBackwardsCompatibility3x extends LuceneTestCase {
       writer.addDocument(new Document());
       writer.commit();
       writer.close();
+      dir.close();
+    }
+  }
+
+  // LUCENE-6279
+  public void testLeftoverUpgradedFile() throws Exception {
+    Directory dir = newDirectory(random(), oldIndexDirs.get("362.cfs"));
+    if (dir instanceof MockDirectoryWrapper) {
+      // We intentionally double-write the upgrade marker file:
+      ((MockDirectoryWrapper) dir).setPreventDoubleWrite(false);
+    }
+    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(new MockAnalyzer(random())));
+
+    // Create errant leftover file, after opening IW but before closing IW:
+    IndexOutput out = dir.createOutput("_0_upgraded.si", IOContext.DEFAULT);
+    CodecUtil.writeHeader(out, "SegmentInfo3xUpgrade", 0);
+    out.close();
+
+    writer.addDocument(new Document());
+    writer.close();
+
+    // Causes FNFE on _0.si during check index before the fix:
+    dir.close();
+  }
+
+  // LUCENE-6287: copy this back to a 3.6.x checkout, run it, then cd to
+  // the index dir and run "zip manysegments.362.zip *" and copy to this dir:
+  /*
+  public void testCreateManySegmentsIndex() throws Exception {
+    // we use a real directory name that is not cleaned up, because this method is only used to create backwards indexes:
+    File indexDir = new File(LuceneTestCase.TEMP_DIR, "manysegments");
+    System.out.println("TEST: indexDir " + indexDir);
+    _TestUtil.rmDir(indexDir);
+    Directory dir = newFSDirectory(indexDir);
+    IndexWriterConfig conf = new IndexWriterConfig(TEST_VERSION_CURRENT, new WhitespaceAnalyzer(TEST_VERSION_CURRENT))
+      .setMaxBufferedDocs(2);
+    TieredMergePolicy tmp = (TieredMergePolicy) conf.getMergePolicy();
+    tmp.setSegmentsPerTier(1000);
+    tmp.setFloorSegmentMB(.0000001);
+    IndexWriter writer = new IndexWriter(dir, conf);
+    //writer.setInfoStream(System.out);
+    
+    for(int i=0;i<200;i++) {
+      Document doc = new Document();
+      doc.add(new Field("content", "doc " + i, Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.WITH_POSITIONS_OFFSETS));
+      writer.addDocument(doc);
+    }
+    assertEquals("wrong doc count", 200, writer.maxDoc());
+    writer.close();
+    dir.close();
+  }
+  */
+
+  static final String manySegments3xIndex = "manysegments.362.zip";
+
+  // LUCENE-6287
+  public void testMergeDuringUpgrade() throws Exception {
+    // NOTE: this fails only rarely
+    for(int i=0;i<10;i++) {
+      File indexPath = createTempDir("manysegments.362");
+      TestUtil.unzip(getDataFile(manySegments3xIndex), indexPath);
+      Directory dir = newFSDirectory(indexPath);
+      IndexWriterConfig conf = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+      IndexWriter writer = new IndexWriter(dir, conf);
+      writer.addDocument(new Document());
+      writer.commit();
+      writer.rollback();
       dir.close();
     }
   }

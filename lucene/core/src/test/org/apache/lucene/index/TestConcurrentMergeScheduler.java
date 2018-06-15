@@ -34,7 +34,6 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.MockDirectoryWrapper;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.TestUtil;
-import org.apache.lucene.util.Version;
 
 public class TestConcurrentMergeScheduler extends LuceneTestCase {
   
@@ -263,7 +262,7 @@ public class TestConcurrentMergeScheduler extends LuceneTestCase {
   // LUCENE-4544
   public void testMaxMergeCount() throws Exception {
     Directory dir = newDirectory();
-    IndexWriterConfig iwc = new IndexWriterConfig(Version.LATEST, new MockAnalyzer(random()));
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
 
     final int maxMergeCount = TestUtil.nextInt(random(), 1, 5);
     final int maxMergeThreads = TestUtil.nextInt(random(), 1, maxMergeCount);
@@ -378,7 +377,7 @@ public class TestConcurrentMergeScheduler extends LuceneTestCase {
 
   public void testLiveMaxMergeCount() throws Exception {
     Directory d = newDirectory();
-    IndexWriterConfig iwc = new IndexWriterConfig(Version.LATEST, new MockAnalyzer(random()));
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
     TieredMergePolicy tmp = new TieredMergePolicy();
     tmp.setSegmentsPerTier(1000);
     tmp.setMaxMergeAtOnce(1000);
@@ -443,5 +442,73 @@ public class TestConcurrentMergeScheduler extends LuceneTestCase {
 
     w.close();
     d.close();
+  }
+
+  // LUCENE-6094
+  public void testHangDuringRollback() throws Throwable {
+    Directory dir = newMockDirectory();
+    IndexWriterConfig iwc = new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random()));
+    iwc.setMaxBufferedDocs(2);
+    LogDocMergePolicy mp = new LogDocMergePolicy();
+    iwc.setMergePolicy(mp);
+    mp.setMergeFactor(2);
+    final CountDownLatch mergeStart = new CountDownLatch(1);
+    final CountDownLatch mergeFinish = new CountDownLatch(1);
+    ConcurrentMergeScheduler cms = new ConcurrentMergeScheduler() {
+        @Override
+        protected void doMerge(MergePolicy.OneMerge merge) throws IOException {
+          mergeStart.countDown();
+          try {
+            mergeFinish.await();
+          } catch (InterruptedException ie) {
+            throw new RuntimeException(ie);
+          }
+          super.doMerge(merge);
+        }
+      };
+    cms.setMaxMergesAndThreads(1, 1);
+    iwc.setMergeScheduler(cms);
+
+    final IndexWriter w = new IndexWriter(dir, iwc);
+    
+    w.addDocument(new Document());
+    w.addDocument(new Document());
+    // flush
+
+    w.addDocument(new Document());
+    w.addDocument(new Document());
+    // flush + merge
+
+    // Wait for merge to kick off
+    mergeStart.await();
+
+    new Thread() {
+      @Override
+      public void run() {
+        try {
+          w.addDocument(new Document());
+          w.addDocument(new Document());
+          // flush
+
+          w.addDocument(new Document());
+          // W/o the fix for LUCENE-6094 we would hang forever here:
+          w.addDocument(new Document());
+          // flush + merge
+          
+          // Now allow first merge to finish:
+          mergeFinish.countDown();
+
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }
+    }.start();
+
+    while (w.numDocs() != 8) {
+      Thread.sleep(10);
+    }
+
+    w.rollback();
+    dir.close();
   }
 }

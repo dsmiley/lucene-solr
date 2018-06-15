@@ -109,7 +109,7 @@ public class TestAtomicUpdate extends LuceneTestCase {
     TimedThread[] threads = new TimedThread[4];
 
     IndexWriterConfig conf = new IndexWriterConfig(
-        Version.LATEST, new MockAnalyzer(random()))
+        TEST_VERSION_CURRENT, new MockAnalyzer(random()))
         .setMaxBufferedDocs(7);
     ((TieredMergePolicy) conf.getMergePolicy()).setMaxMergeAtOnce(3);
     IndexWriter writer = RandomIndexWriter.mockIndexWriter(directory, conf, random());
@@ -179,6 +179,6 @@ public class TestAtomicUpdate extends LuceneTestCase {
     directory = newFSDirectory(dirPath);
     runTest(directory);
     directory.close();
-    IOUtils.rm(dirPath);
+    TestUtil.rm(dirPath);
   }
 }

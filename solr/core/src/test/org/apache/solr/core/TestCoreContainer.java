@@ -348,9 +348,7 @@ public class TestCoreContainer extends SolrTestCaseJ4 {
   @Test
   public void testCustomHandlers() throws Exception {
 
-    solrHomeDirectory = createTempDir("_customHandlers");
-    SolrResourceLoader loader = new SolrResourceLoader(solrHomeDirectory.getAbsolutePath());
-
+    SolrResourceLoader loader = new SolrResourceLoader("solr/collection1");
     ConfigSolr config = ConfigSolr.fromString(loader, CUSTOM_HANDLERS_SOLR_XML);
 
     CoreContainer cc = new CoreContainer(loader, config);

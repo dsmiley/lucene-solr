@@ -38,12 +38,10 @@ import org.apache.lucene.index.IndexWriterConfig.OpenMode;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TermQuery;
-import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.TestUtil;
 import org.apache.lucene.util.TestUtil;
 import org.apache.lucene.util.ArrayUtil;
-import org.apache.lucene.util.Version;
 
 public class TestBufferedIndexInput extends LuceneTestCase {
   
@@ -236,7 +234,7 @@ public class TestBufferedIndexInput extends LuceneTestCase {
       try {
         IndexWriter writer = new IndexWriter(
             dir,
-            new IndexWriterConfig(Version.LATEST, new MockAnalyzer(random())).
+            new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random())).
                 setOpenMode(OpenMode.CREATE).
                 setMergePolicy(newLogMergePolicy(false))
         );
@@ -283,7 +281,7 @@ public class TestBufferedIndexInput extends LuceneTestCase {
         writer.close();
         reader.close();
       } finally {
-        IOUtils.rm(indexDir);
+        TestUtil.rm(indexDir);
       }
     }
 
@@ -353,12 +351,6 @@ public class TestBufferedIndexInput extends LuceneTestCase {
       public void sync(Collection<String> names) throws IOException {
         dir.sync(names);
       }
-      
-      @Override
-      public void renameFile(String source, String dest) throws IOException {
-        dir.renameFile(source, dest);
-      }
-
       @Override
       public long fileLength(String name) throws IOException {
         return dir.fileLength(name);

@@ -19,7 +19,6 @@ package org.apache.lucene.codecs.lucene40;
 
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.Collections;
 
 import org.apache.lucene.codecs.BlockTermState;
 import org.apache.lucene.codecs.CodecUtil;
@@ -36,7 +35,6 @@ import org.apache.lucene.store.DataInput;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
-import org.apache.lucene.util.Accountable;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
@@ -1168,17 +1166,8 @@ public class Lucene40PostingsReader extends PostingsReaderBase {
   public long ramBytesUsed() {
     return BASE_RAM_BYTES_USED;
   }
-  
-  @Override
-  public Iterable<? extends Accountable> getChildResources() {
-    return Collections.emptyList();
-  }
 
   @Override
   public void checkIntegrity() throws IOException {}
 
-  @Override
-  public String toString() {
-    return getClass().getSimpleName() + "(positions=" + (proxIn != null) + ")";
-  }
 }

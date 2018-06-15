@@ -113,8 +113,6 @@ public class IndexAndTaxonomyReplicationHandler implements ReplicationHandler {
     List<String> indexFiles = copiedFiles.get(IndexAndTaxonomyRevision.INDEX_SOURCE);
     String taxoSegmentsFile = IndexReplicationHandler.getSegmentsFile(taxoFiles, true);
     String indexSegmentsFile = IndexReplicationHandler.getSegmentsFile(indexFiles, false);
-    String taxoPendingFile = taxoSegmentsFile == null ? null : "pending_" + taxoSegmentsFile;
-    String indexPendingFile = "pending_" + indexSegmentsFile;
     
     boolean success = false;
     try {
@@ -128,35 +126,24 @@ public class IndexAndTaxonomyReplicationHandler implements ReplicationHandler {
       }
       indexDir.sync(indexFiles);
       
-      // now copy, fsync, and rename segmentsFile, taxonomy first because it is ok if a
+      // now copy and fsync segmentsFile, taxonomy first because it is ok if a
       // reader sees a more advanced taxonomy than the index.
+      if (taxoSegmentsFile != null) {
+        taxoClientDir.copy(taxoDir, taxoSegmentsFile, taxoSegmentsFile, IOContext.READONCE);
+      }
+      indexClientDir.copy(indexDir, indexSegmentsFile, indexSegmentsFile, IOContext.READONCE);
       
       if (taxoSegmentsFile != null) {
-        taxoClientDir.copy(taxoDir, taxoSegmentsFile, taxoPendingFile, IOContext.READONCE);
+        taxoDir.sync(Collections.singletonList(taxoSegmentsFile));
       }
-      indexClientDir.copy(indexDir, indexSegmentsFile, indexPendingFile, IOContext.READONCE);
-      
-      if (taxoSegmentsFile != null) {
-        taxoDir.sync(Collections.singletonList(taxoPendingFile));
-      }
-      indexDir.sync(Collections.singletonList(indexPendingFile));
-      
-      if (taxoSegmentsFile != null) {
-        taxoDir.renameFile(taxoPendingFile, taxoSegmentsFile);
-      }
-      
-      indexDir.renameFile(indexPendingFile, indexSegmentsFile);
+      indexDir.sync(Collections.singletonList(indexSegmentsFile));
       
       success = true;
     } finally {
       if (!success) {
-        if (taxoSegmentsFile != null) {
-          taxoFiles.add(taxoSegmentsFile); // add it back so it gets deleted too
-          taxoFiles.add(taxoPendingFile);
-        }
+        taxoFiles.add(taxoSegmentsFile); // add it back so it gets deleted too
         IndexReplicationHandler.cleanupFilesOnFailure(taxoDir, taxoFiles);
         indexFiles.add(indexSegmentsFile); // add it back so it gets deleted too
-        indexFiles.add(indexPendingFile);
         IndexReplicationHandler.cleanupFilesOnFailure(indexDir, indexFiles);
       }
     }
@@ -169,6 +156,10 @@ public class IndexAndTaxonomyReplicationHandler implements ReplicationHandler {
       infoStream.message(INFO_STREAM_COMPONENT, "revisionReady(): currentVersion=" + currentVersion
           + " currentRevisionFiles=" + currentRevisionFiles);
     }
+
+    // update the segments.gen file
+    IndexReplicationHandler.writeSegmentsGen(taxoSegmentsFile, taxoDir);
+    IndexReplicationHandler.writeSegmentsGen(indexSegmentsFile, indexDir);
     
     // Cleanup the index directory from old and unused index files.
     // NOTE: we don't use IndexWriter.deleteUnusedFiles here since it may have

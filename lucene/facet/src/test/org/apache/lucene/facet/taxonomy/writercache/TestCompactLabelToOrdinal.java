@@ -5,7 +5,6 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
@@ -77,7 +76,7 @@ public class TestCompactLabelToOrdinal extends FacetTestCase {
       if (i > 0 && i % flushInterval == 0) {
         compact.flush(f);    
         compact = CompactLabelToOrdinal.open(f, 0.15f, 3);
-        Files.delete(f.toPath());
+        assertTrue(f.delete());
         if (flushInterval < (n / 10)) {
           flushInterval *= 10;
         }

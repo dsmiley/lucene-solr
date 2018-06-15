@@ -670,10 +670,6 @@ public class DirectUpdateHandler2 extends UpdateHandler implements SolrCoreState
    */
   @Override
   public void rollback(RollbackUpdateCommand cmd) throws IOException {
-    if (core.getCoreDescriptor().getCoreContainer().isZooKeeperAware()) {
-      throw new UnsupportedOperationException("Rollback is currently not supported in SolrCloud mode. (SOLR-4895)");
-    }
-
     rollbackCommands.incrementAndGet();
 
     boolean error=true;

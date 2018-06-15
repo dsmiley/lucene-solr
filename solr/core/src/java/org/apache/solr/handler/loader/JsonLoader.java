@@ -113,11 +113,14 @@ public class JsonLoader extends ContentStreamLoader {
     @SuppressWarnings("fallthrough")
     void processUpdate() throws IOException
     {
-      String path = (String) req.getContext().get("path");
-      if(UpdateRequestHandler.DOC_PATH.equals(path) ||   "false".equals( req.getParams().get("json.command"))){
+      if("false".equals( req.getParams().get("json.command"))){
+
         String split = req.getParams().get("split");
-        String[] f = req.getParams().getParams("f");
-        handleSplitMode(split,f);
+        if(split != null){
+          handleSplitMode(split);
+        } else {
+          handleStreamingSingleDocs();
+        }
         return;
       }
       int ev = parser.nextEvent();
@@ -189,9 +192,9 @@ public class JsonLoader extends ContentStreamLoader {
       }
     }
 
-    private void handleSplitMode(String split, String[] fields) throws IOException {
-      if(split == null) split = "/";
-      if(fields == null || fields.length ==0) fields = new String[]{"/**"};
+    private void handleSplitMode(String split) throws IOException {
+      String[] fields = req.getParams().getParams("f");
+      req.getCore().getLatestSchema().getDefaultSearchFieldName();
       final boolean echo = "true".equals( req.getParams().get("echo"));
       JsonRecordReader jsonRecordReader = JsonRecordReader.getInst(split, Arrays.asList(fields));
       jsonRecordReader.streamRecords(parser,new JsonRecordReader.Handler() {

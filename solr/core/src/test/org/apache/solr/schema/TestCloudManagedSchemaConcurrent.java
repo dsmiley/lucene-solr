@@ -38,12 +38,6 @@ import java.util.concurrent.TimeUnit;
 public class TestCloudManagedSchemaConcurrent extends AbstractFullDistribZkTestBase {
   private static final Logger log = LoggerFactory.getLogger(TestCloudManagedSchemaConcurrent.class);
   private static final String SUCCESS_XPATH = "/response/lst[@name='responseHeader']/int[@name='status'][.='0']";
-  private static final String PUT_DYNAMIC_FIELDNAME = "newdynamicfieldPut";
-  private static final String POST_DYNAMIC_FIELDNAME = "newdynamicfieldPost";
-  private static final String PUT_FIELDNAME = "newfieldPut";
-  private static final String POST_FIELDNAME = "newfieldPost";
-  private static final String PUT_FIELDTYPE = "newfieldtypePut";
-  private static final String POST_FIELDTYPE = "newfieldtypePost";
 
   public TestCloudManagedSchemaConcurrent() {
     super();
@@ -87,7 +81,7 @@ public class TestCloudManagedSchemaConcurrent extends AbstractFullDistribZkTestB
     }
   }
 
-  private static void verifySuccess(String request, String response) throws Exception {
+  private void verifySuccess(String request, String response) throws Exception {
     String result = BaseTestHarness.validateXPath(response, SUCCESS_XPATH);
     if (null != result) {
       String msg = "QUERY FAILED: xpath=" + result + "  request=" + request + "  response=" + response;
@@ -96,97 +90,51 @@ public class TestCloudManagedSchemaConcurrent extends AbstractFullDistribZkTestB
     }
   }
 
-  private static void addFieldPut(RestTestHarness publisher, String fieldName) throws Exception {
+  private void addFieldPut(RestTestHarness publisher, String fieldName) throws Exception {
     final String content = "{\"type\":\"text\",\"stored\":\"false\"}";
     String request = "/schema/fields/" + fieldName + "?wt=xml";
     String response = publisher.put(request, content);
     verifySuccess(request, response);
   }
 
-  private static void addFieldPost(RestTestHarness publisher, String fieldName) throws Exception {
+  private void addFieldPost(RestTestHarness publisher, String fieldName) throws Exception {
     final String content = "[{\"name\":\""+fieldName+"\",\"type\":\"text\",\"stored\":\"false\"}]";
     String request = "/schema/fields/?wt=xml";
     String response = publisher.post(request, content);
     verifySuccess(request, response);
   }
 
-  private static void addDynamicFieldPut(RestTestHarness publisher, String dynamicFieldPattern) throws Exception {
-    final String content = "{\"type\":\"text\",\"stored\":\"false\"}";
-    String request = "/schema/dynamicfields/" + dynamicFieldPattern + "?wt=xml";
-    String response = publisher.put(request, content);
-    verifySuccess(request, response);
-  }
-
-  private static void addDynamicFieldPost(RestTestHarness publisher, String dynamicFieldPattern) throws Exception {
-    final String content = "[{\"name\":\""+dynamicFieldPattern+"\",\"type\":\"text\",\"stored\":\"false\"}]";
-    String request = "/schema/dynamicfields/?wt=xml";
-    String response = publisher.post(request, content);
-    verifySuccess(request, response);
-  }
-
-  private static void copyField(RestTestHarness publisher, String source, String dest) throws Exception {
+  private void copyField(RestTestHarness publisher, String source, String dest) throws Exception {
     final String content = "[{\"source\":\""+source+"\",\"dest\":[\""+dest+"\"]}]";
     String request = "/schema/copyfields/?wt=xml";
     String response = publisher.post(request, content);
     verifySuccess(request, response);
   }
 
-  private static void addFieldTypePut(RestTestHarness publisher, String typeName) throws Exception {
-    final String content = "{\"class\":\"solr.TrieIntField\"}";
-    String request = "/schema/fieldtypes/" + typeName + "?wt=xml";
-    String response = publisher.put(request, content);
-    verifySuccess(request, response);
-  }
-
-  private static void addFieldTypePost(RestTestHarness publisher, String typeName) throws Exception {
-    final String content = "[{\"name\":\""+typeName+"\",\"class\":\"solr.TrieIntField\"}]";
-    String request = "/schema/fieldtypes/?wt=xml";
-    String response = publisher.post(request, content);
-    verifySuccess(request, response);
-  }
-
-  private String[] getExpectedFieldResponses(Info info) {
-    String[] expectedAddFields = new String[1 + info.numAddFieldPuts + info.numAddFieldPosts];
+  private String[] getExpectedFieldResponses(int numAddFieldPuts, String putFieldName,
+                                             int numAddFieldPosts, String postFieldName) {
+    String[] expectedAddFields = new String[1 + numAddFieldPuts + numAddFieldPosts];
     expectedAddFields[0] = SUCCESS_XPATH;
 
-    for (int i = 0; i < info.numAddFieldPuts; ++i) {
-      String newFieldName = PUT_FIELDNAME + info.fieldNameSuffix + i;
+    for (int i = 0; i < numAddFieldPuts; ++i) {
+      String newFieldName = putFieldName + i;
       expectedAddFields[1 + i] 
           = "/response/arr[@name='fields']/lst/str[@name='name'][.='" + newFieldName + "']";
     }
 
-    for (int i = 0; i < info.numAddFieldPosts; ++i) {
-      String newFieldName = POST_FIELDNAME + info.fieldNameSuffix + i;
-      expectedAddFields[1 + info.numAddFieldPuts + i]
+    for (int i = 0; i < numAddFieldPosts; ++i) {
+      String newFieldName = postFieldName + i;
+      expectedAddFields[1 + numAddFieldPuts + i]
           = "/response/arr[@name='fields']/lst/str[@name='name'][.='" + newFieldName + "']";
     }
 
     return expectedAddFields;
   }
 
-  private String[] getExpectedDynamicFieldResponses(Info info) {
-    String[] expectedAddDynamicFields = new String[1 + info.numAddDynamicFieldPuts + info.numAddDynamicFieldPosts];
-    expectedAddDynamicFields[0] = SUCCESS_XPATH;
-
-    for (int i = 0; i < info.numAddDynamicFieldPuts; ++i) {
-      String newDynamicFieldPattern = PUT_DYNAMIC_FIELDNAME + info.fieldNameSuffix + i + "_*";
-      expectedAddDynamicFields[1 + i]
-          = "/response/arr[@name='dynamicFields']/lst/str[@name='name'][.='" + newDynamicFieldPattern + "']";
-    }
-
-    for (int i = 0; i < info.numAddDynamicFieldPosts; ++i) {
-      String newDynamicFieldPattern = POST_DYNAMIC_FIELDNAME + info.fieldNameSuffix + i + "_*";
-      expectedAddDynamicFields[1 + info.numAddDynamicFieldPuts + i]
-          = "/response/arr[@name='dynamicFields']/lst/str[@name='name'][.='" + newDynamicFieldPattern + "']";
-    }
-
-    return expectedAddDynamicFields;
-  }
-
-  private String[] getExpectedCopyFieldResponses(Info info) {
+  private String[] getExpectedCopyFieldResponses(List<CopyFieldInfo> copyFields) {
     ArrayList<String> expectedCopyFields = new ArrayList<>();
     expectedCopyFields.add(SUCCESS_XPATH);
-    for (CopyFieldInfo cpi : info.copyFields) {
+    for (CopyFieldInfo cpi : copyFields) {
       String expectedSourceName = cpi.getSourceField();
       expectedCopyFields.add
           ("/response/arr[@name='copyFields']/lst/str[@name='source'][.='" + expectedSourceName + "']");
@@ -198,73 +146,36 @@ public class TestCloudManagedSchemaConcurrent extends AbstractFullDistribZkTestB
     return expectedCopyFields.toArray(new String[expectedCopyFields.size()]);
   }
 
-  private String[] getExpectedFieldTypeResponses(Info info) {
-    String[] expectedAddFieldTypes = new String[1 + info.numAddFieldTypePuts + info.numAddFieldTypePosts];
-    expectedAddFieldTypes[0] = SUCCESS_XPATH;
-
-    for (int i = 0; i < info.numAddFieldTypePuts; ++i) {
-      String newFieldTypeName = PUT_FIELDTYPE + info.fieldNameSuffix + i;
-      expectedAddFieldTypes[1 + i]
-          = "/response/arr[@name='fieldTypes']/lst/str[@name='name'][.='" + newFieldTypeName + "']";
-    }
-
-    for (int i = 0; i < info.numAddFieldTypePosts; ++i) {
-      String newFieldTypeName = POST_FIELDTYPE + info.fieldNameSuffix + i;
-      expectedAddFieldTypes[1 + info.numAddFieldTypePuts + i]
-          = "/response/arr[@name='fieldTypes']/lst/str[@name='name'][.='" + newFieldTypeName + "']";
-    }
-
-    return expectedAddFieldTypes;
-  }
-  
-
   @Override
   public void doTest() throws Exception {
     setupHarnesses();
     concurrentOperationsTest();
     schemaLockTest();
-  }
+  }  
   
-  private class Info {
+  private void concurrentOperationsTest() throws Exception {
+    
+    // First, add a bunch of fields via PUT and POST, as well as copyFields,
+    // but do it fast enough and verify shards' schemas after all of them are added
+    int numFields = 100;
     int numAddFieldPuts = 0;
     int numAddFieldPosts = 0;
-    int numAddDynamicFieldPuts = 0;
-    int numAddDynamicFieldPosts = 0;
-    int numAddFieldTypePuts = 0;
-    int numAddFieldTypePosts = 0;
-    public String fieldNameSuffix;
     List<CopyFieldInfo> copyFields = new ArrayList<>();
+    
+    final String putFieldName = "newfieldPut";
+    final String postFieldName = "newfieldPost";
 
-    public Info(String fieldNameSuffix) {
-      this.fieldNameSuffix = fieldNameSuffix;
-    }
-  }
+    for (int i = 0; i <= numFields ; ++i) {
+      RestTestHarness publisher = restTestHarnesses.get(r.nextInt(restTestHarnesses.size()));
 
-  private enum Operation {
-    PUT_AddField {
-      @Override public void execute(RestTestHarness publisher, int fieldNum, Info info) throws Exception {
-        String fieldname = PUT_FIELDNAME + info.numAddFieldPuts++;
-        addFieldPut(publisher, fieldname);
+      int type = random().nextInt(3);
+      if (type == 0) { // send an add field via PUT
+        addFieldPut(publisher, putFieldName + numAddFieldPuts++);
       }
-    },
-    POST_AddField {
-      @Override public void execute(RestTestHarness publisher, int fieldNum, Info info) throws Exception {
-        String fieldname = POST_FIELDNAME + info.numAddFieldPosts++;
-        addFieldPost(publisher, fieldname);
+      else if (type == 1) { // send an add field via POST
+        addFieldPost(publisher, postFieldName + numAddFieldPosts++);
       }
-    },
-    PUT_AddDynamicField {
-      @Override public void execute(RestTestHarness publisher, int fieldNum, Info info) throws Exception {
-        addDynamicFieldPut(publisher, PUT_DYNAMIC_FIELDNAME + info.numAddDynamicFieldPuts++ + "_*");
-      }
-    },
-    POST_AddDynamicField {
-      @Override public void execute(RestTestHarness publisher, int fieldNum, Info info) throws Exception {
-        addDynamicFieldPost(publisher, POST_DYNAMIC_FIELDNAME + info.numAddDynamicFieldPosts++ + "_*");
-      }
-    },
-    POST_AddCopyField {
-      @Override public void execute(RestTestHarness publisher, int fieldNum, Info info) throws Exception {
+      else if (type == 2) { // send a copy field
         String sourceField = null;
         String destField = null;
 
@@ -272,65 +183,31 @@ public class TestCloudManagedSchemaConcurrent extends AbstractFullDistribZkTestB
         if (sourceType == 0) {  // existing
           sourceField = "name";
         } else if (sourceType == 1) { // newly created
-          sourceField = "copySource" + fieldNum;
+          sourceField = "copySource" + i;
           addFieldPut(publisher, sourceField);
         } else { // dynamic
-          sourceField = "*_dynamicSource" + fieldNum + "_t";
+          sourceField = "*_dynamicSource" + i + "_t";
           // * only supported if both src and dst use it
-          destField = "*_dynamicDest" + fieldNum + "_t";
+          destField = "*_dynamicDest" + i + "_t";
         }
-
+        
         if (destField == null) {
           int destType = random().nextInt(2);
           if (destType == 0) {  // existing
             destField = "title";
           } else { // newly created
-            destField = "copyDest" + fieldNum;
+            destField = "copyDest" + i;
             addFieldPut(publisher, destField);
           }
         }
         copyField(publisher, sourceField, destField);
-        info.copyFields.add(new CopyFieldInfo(sourceField, destField));
+        copyFields.add(new CopyFieldInfo(sourceField, destField));
       }
-    },
-    PUT_AddFieldType {
-      @Override public void execute(RestTestHarness publisher, int fieldNum, Info info) throws Exception {
-        String typeName = PUT_FIELDTYPE + info.numAddFieldTypePuts++;
-        addFieldTypePut(publisher, typeName);
-      }
-    },
-    POST_AddFieldType {
-      @Override public void execute(RestTestHarness publisher, int fieldNum, Info info) throws Exception {
-        String typeName = POST_FIELDTYPE + info.numAddFieldTypePosts++;
-        addFieldTypePost(publisher, typeName);
-      }
-    };
-
-
-    public abstract void execute(RestTestHarness publisher, int fieldNum, Info info) throws Exception;
-
-    private static final Operation[] VALUES = values();
-    public static Operation randomOperation()  {
-      return VALUES[r.nextInt(VALUES.length)];
-    }
-  }
-
-  private void concurrentOperationsTest() throws Exception {
-    
-    // First, add a bunch of fields and dynamic fields via PUT and POST, as well as copyFields,
-    // but do it fast enough and verify shards' schemas after all of them are added
-    int numFields = 100;
-    Info info = new Info("");
-
-    for (int fieldNum = 0; fieldNum <= numFields ; ++fieldNum) {
-      RestTestHarness publisher = restTestHarnesses.get(r.nextInt(restTestHarnesses.size()));
-      Operation.randomOperation().execute(publisher, fieldNum, info);
     }
 
-    String[] expectedAddFields = getExpectedFieldResponses(info);
-    String[] expectedAddDynamicFields = getExpectedDynamicFieldResponses(info);
-    String[] expectedCopyFields = getExpectedCopyFieldResponses(info);
-    String[] expectedAddFieldTypes = getExpectedFieldTypeResponses(info);
+    String[] expectedAddFields = getExpectedFieldResponses(numAddFieldPuts, putFieldName,
+                                                           numAddFieldPosts, postFieldName);
+    String[] expectedCopyFields = getExpectedCopyFieldResponses(copyFields);
 
     boolean success = false;
     long maxTimeoutMillis = 100000;
@@ -344,26 +221,10 @@ public class TestCloudManagedSchemaConcurrent extends AbstractFullDistribZkTestB
       Thread.sleep(100);
 
       for (RestTestHarness client : restTestHarnesses) {
-        // verify addFieldTypePuts and addFieldTypePosts
-        request = "/schema/fieldtypes?wt=xml";
-        response = client.query(request);
-        result = BaseTestHarness.validateXPath(response, expectedAddFieldTypes);
-        if (result != null) {
-          break;
-        }
-
         // verify addFieldPuts and addFieldPosts
         request = "/schema/fields?wt=xml";
         response = client.query(request);
         result = BaseTestHarness.validateXPath(response, expectedAddFields);
-        if (result != null) {
-          break;
-        }
-
-        // verify addDynamicFieldPuts and addDynamicFieldPosts
-        request = "/schema/dynamicfields?wt=xml";
-        response = client.query(request);
-        result = BaseTestHarness.validateXPath(response, expectedAddDynamicFields);
         if (result != null) {
           break;
         }
@@ -385,102 +246,23 @@ public class TestCloudManagedSchemaConcurrent extends AbstractFullDistribZkTestB
     }
   }
 
-  private abstract class PutPostThread extends Thread {
+  private class PutPostThread extends Thread {
     RestTestHarness harness;
-    Info info;
-    public String fieldName;
-
-    public PutPostThread(RestTestHarness harness, Info info) {
+    String fieldName;
+    boolean isPut;
+    public PutPostThread(RestTestHarness harness, String fieldName, boolean isPut) {
       this.harness = harness;
-      this.info = info;
+      this.fieldName = fieldName;
+      this.isPut = isPut;
     }
 
-    public abstract void run();
-  }
-  
-  private class PutFieldThread extends PutPostThread {
-    public PutFieldThread(RestTestHarness harness, Info info) {
-      super(harness, info);
-      fieldName = PUT_FIELDNAME + "Thread" + info.numAddFieldPuts++;
-    }
     public void run() {
       try {
-        addFieldPut(harness, fieldName);
-      } catch (Exception e) {
-        // log.error("###ACTUAL FAILURE!");
-        throw new RuntimeException(e);
-      }
-    }
-  }
-  
-  private class PostFieldThread extends PutPostThread {
-    public PostFieldThread(RestTestHarness harness, Info info) {
-      super(harness, info);
-      fieldName = POST_FIELDNAME + "Thread" + info.numAddFieldPosts++;
-    }
-    public void run() {
-      try {
-        addFieldPost(harness, fieldName);
-      } catch (Exception e) {
-        // log.error("###ACTUAL FAILURE!");
-        throw new RuntimeException(e);
-      }
-    }
-  }
-
-  private class PutFieldTypeThread extends PutPostThread {
-    public PutFieldTypeThread(RestTestHarness harness, Info info) {
-      super(harness, info);
-      fieldName = PUT_FIELDTYPE + "Thread" + info.numAddFieldTypePuts++;
-    }
-    public void run() {
-      try {
-        addFieldTypePut(harness, fieldName);
-      } catch (Exception e) {
-        // log.error("###ACTUAL FAILURE!");
-        throw new RuntimeException(e);
-      }
-    }
-  }
-
-  private class PostFieldTypeThread extends PutPostThread {
-    public PostFieldTypeThread(RestTestHarness harness, Info info) {
-      super(harness, info);
-      fieldName = POST_FIELDTYPE + "Thread" + info.numAddFieldTypePosts++;
-    }
-    public void run() {
-      try {
-        addFieldTypePost(harness, fieldName);
-      } catch (Exception e) {
-        // log.error("###ACTUAL FAILURE!");
-        throw new RuntimeException(e);
-      }
-    }
-  }
-
-  private class PutDynamicFieldThread extends PutPostThread {
-    public PutDynamicFieldThread(RestTestHarness harness, Info info) {
-      super(harness, info);
-      fieldName = PUT_FIELDNAME + "Thread" + info.numAddFieldPuts++;
-    }
-    public void run() {
-      try {
-        addFieldPut(harness, fieldName);
-      } catch (Exception e) {
-        // log.error("###ACTUAL FAILURE!");
-        throw new RuntimeException(e);
-      }
-    }
-  }
-
-  private class PostDynamicFieldThread extends PutPostThread {
-    public PostDynamicFieldThread(RestTestHarness harness, Info info) {
-      super(harness, info);
-      fieldName = POST_FIELDNAME + "Thread" + info.numAddFieldPosts++;
-    }
-    public void run() {
-      try {
-        addFieldPost(harness, fieldName);
+        if (isPut) {
+          addFieldPut(harness, fieldName);
+        } else {
+          addFieldPost(harness, fieldName);
+        }
       } catch (Exception e) {
         // log.error("###ACTUAL FAILURE!");
         throw new RuntimeException(e);
@@ -492,45 +274,29 @@ public class TestCloudManagedSchemaConcurrent extends AbstractFullDistribZkTestB
 
     // First, add a bunch of fields via PUT and POST, as well as copyFields,
     // but do it fast enough and verify shards' schemas after all of them are added
-    int numFields = 5;
-    Info info = new Info("Thread");
+    int numFields = 25;
+    int numAddFieldPuts = 0;
+    int numAddFieldPosts = 0;
+    
+    final String putFieldName = "newfieldPutThread";
+    final String postFieldName = "newfieldPostThread";
 
     for (int i = 0; i <= numFields ; ++i) {
       // System.err.println("###ITERATION: " + i);
-      RestTestHarness publisher = restTestHarnesses.get(r.nextInt(restTestHarnesses.size()));
-      PostFieldThread postFieldThread = new PostFieldThread(publisher, info);
-      postFieldThread.start();
+      int postHarness = r.nextInt(restTestHarnesses.size());
+      RestTestHarness publisher = restTestHarnesses.get(postHarness);
+      PutPostThread postThread = new PutPostThread(publisher, postFieldName + numAddFieldPosts++, false);
+      postThread.start();
 
-      publisher = restTestHarnesses.get(r.nextInt(restTestHarnesses.size()));
-      PutFieldThread putFieldThread = new PutFieldThread(publisher, info);
-      putFieldThread.start();
+      int putHarness = r.nextInt(restTestHarnesses.size());
+      publisher = restTestHarnesses.get(putHarness);
+      PutPostThread putThread = new PutPostThread(publisher, putFieldName + numAddFieldPuts++, true);
+      putThread.start();
+      postThread.join();
+      putThread.join();
 
-      publisher = restTestHarnesses.get(r.nextInt(restTestHarnesses.size()));
-      PostDynamicFieldThread postDynamicFieldThread = new PostDynamicFieldThread(publisher, info);
-      postDynamicFieldThread.start();
-
-      publisher = restTestHarnesses.get(r.nextInt(restTestHarnesses.size()));
-      PutDynamicFieldThread putDynamicFieldThread = new PutDynamicFieldThread(publisher, info);
-      putDynamicFieldThread.start();
-
-      publisher = restTestHarnesses.get(r.nextInt(restTestHarnesses.size()));
-      PostFieldTypeThread postFieldTypeThread = new PostFieldTypeThread(publisher, info);
-      postFieldTypeThread.start();
-
-      publisher = restTestHarnesses.get(r.nextInt(restTestHarnesses.size()));
-      PutFieldTypeThread putFieldTypeThread = new PutFieldTypeThread(publisher, info);
-      putFieldTypeThread.start();
-
-      postFieldThread.join();
-      putFieldThread.join();
-      postDynamicFieldThread.join();
-      putDynamicFieldThread.join();
-      postFieldTypeThread.join();
-      putFieldTypeThread.join();
-
-      String[] expectedAddFields = getExpectedFieldResponses(info);
-      String[] expectedAddFieldTypes = getExpectedFieldTypeResponses(info);
-      String[] expectedAddDynamicFields = getExpectedDynamicFieldResponses(info);
+      String[] expectedAddFields = getExpectedFieldResponses(numAddFieldPuts, putFieldName, 
+                                                             numAddFieldPosts, postFieldName);
 
       boolean success = false;
       long maxTimeoutMillis = 100000;
@@ -552,33 +318,10 @@ public class TestCloudManagedSchemaConcurrent extends AbstractFullDistribZkTestB
           response = client.query(request);
           //System.err.println("###RESPONSE: " + response);
           result = BaseTestHarness.validateXPath(response, expectedAddFields);
-          
           if (result != null) {
             // System.err.println("###FAILURE!");
             break;
           }
-
-          // verify addDynamicFieldPuts and addDynamicFieldPosts
-          request = "/schema/dynamicfields?wt=xml";
-          response = client.query(request);
-          //System.err.println("###RESPONSE: " + response);
-          result = BaseTestHarness.validateXPath(response, expectedAddDynamicFields);
-
-          if (result != null) {
-            // System.err.println("###FAILURE!");
-            break;
-          }
-
-          request = "/schema/fieldtypes?wt=xml";
-          response = client.query(request);
-          //System.err.println("###RESPONSE: " + response);
-          result = BaseTestHarness.validateXPath(response, expectedAddFieldTypes);
-
-          if (result != null) {
-            // System.err.println("###FAILURE!");
-            break;
-          }
-
         }
         success = (result == null);
       }

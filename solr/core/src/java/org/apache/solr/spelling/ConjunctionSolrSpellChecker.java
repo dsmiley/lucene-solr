@@ -19,7 +19,6 @@ package org.apache.solr.spelling;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -168,20 +167,17 @@ public class ConjunctionSolrSpellChecker extends SolrSpellChecker {
             Map.Entry<String,Integer> corr = iter.next();
             combinedResult.add(original, corr.getKey(), corr.getValue());
             Integer tokenFrequency = combinedTokenFrequency.get(original);
-            combinedResult.addFrequency(original, tokenFrequency==null ? 0 : tokenFrequency);
+            if(tokenFrequency!=null) {
+              combinedResult.addFrequency(original, tokenFrequency);
+            }
             if(++numberAdded==numSug) {
               break;
             }
           }
         }        
         if(!anyData) {
-          if(numberAdded==0) {
-            combinedResult.add(original, Collections.<String>emptyList());
-            Integer tokenFrequency = combinedTokenFrequency.get(original);
-            combinedResult.addFrequency(original, tokenFrequency==null ? 0 : tokenFrequency);
-          }
           break;
-        }        
+        }
       }      
     }    
     return combinedResult;
