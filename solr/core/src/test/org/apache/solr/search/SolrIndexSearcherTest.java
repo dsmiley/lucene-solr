@@ -20,30 +20,38 @@ import org.apache.lucene.index.Term;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TotalHits;
 import org.apache.solr.SolrTestCaseJ4;
-import org.junit.Before;
+import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
+import org.apache.solr.client.solrj.response.QueryResponse;
 import org.junit.BeforeClass;
 
 import java.io.IOException;
 
 public class SolrIndexSearcherTest extends SolrTestCaseJ4 {
-  
+
   private final static int NUM_DOCS = 20;
+  private static final String FIELD3 = "field3_i_dvo"; // integer, docValues, not multiValued
 
   @BeforeClass
   public static void setUpClass() throws Exception {
     initCore("solrconfig.xml", "schema.xml");
     for (int i = 0 ; i < NUM_DOCS ; i ++) {
-      assertU(adoc("id", String.valueOf(i), "field1_s", "foo", "field2_s", String.valueOf(i % 2), "field3_s", String.valueOf(i)));
-      assertU(commit());
+      assertU(adoc("id", String.valueOf(i),
+          "field1_s", "foo",
+          "field2_s", String.valueOf(i % 2),
+          FIELD3, String.valueOf(i)));
     }
+    assertU(commit());
   }
   
-  @Before
-  public void setUp() throws Exception {
-    assertU(adoc("id", "1", "field1_s", "foo", "field2_s", "1", "field3_s", "1"));
-    assertU(commit());
-    super.setUp();
-  }
+//  @Before
+//  public void setUp() throws Exception {
+//    assertU(adoc("id", "1",
+//        "field1_s", "foo",
+//        "field2_s", "1",
+//        FIELD3, "1"));
+//    assertU(commit());
+//    super.setUp();
+//  }
   
   public void testMinExactHitsLongValue() {
     assertQ("test query on empty index",
@@ -196,5 +204,20 @@ public class SolrIndexSearcherTest extends SolrTestCaseJ4 {
       assertNotEquals(Float.NaN, qr.getDocList().maxScore());
       return null;
     });
+  }
+
+  public void testMinExactHitsDisabledByCollapse() throws Exception {
+    EmbeddedSolrServer solr = new EmbeddedSolrServer(h.getCore()); // TODO SOLR-11872 ought to be in test-framework
+    // try to force an approximation, but add a collapse which ought to foil the attempt
+    QueryResponse qr = solr.query(params(
+        "q", "{!cache=false}field2_s:1",
+        "rows", "1",
+        "minExactHits", "1",
+        // this collapse will end up matching all docs
+        "fq", "{!collapse field=" + FIELD3 + " nullPolicy=expand}"// nullPolicy needed due to a bug when val=0
+    ));
+    System.out.println(qr.getResults());
+    assertEquals(NUM_DOCS/2, qr.getResults().getNumFound());
+    assertTrue(qr.getResults().getNumFoundExact());
   }
 }
