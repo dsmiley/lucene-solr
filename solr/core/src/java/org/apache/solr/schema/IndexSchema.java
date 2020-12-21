@@ -54,6 +54,7 @@ import org.apache.solr.common.MapSerializable;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.SolrException.ErrorCode;
+import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.common.cloud.SolrClassLoader;
 import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.params.MapSolrParams;
@@ -358,6 +359,16 @@ public class IndexSchema {
       return null;
     } else if (val instanceof IndexableField) {
       return uniqueKeyFieldType.toExternal((IndexableField) val);
+    } else {
+      return val.toString();
+    }
+  }
+
+  /** Like {@link #printableUniqueKey(org.apache.lucene.document.Document)} */
+  public String printableUniqueKey(SolrInputDocument solrDoc) {
+    Object val = solrDoc.getFieldValue(uniqueKeyFieldName);
+    if (val == null) {
+      return null;
     } else {
       return val.toString();
     }

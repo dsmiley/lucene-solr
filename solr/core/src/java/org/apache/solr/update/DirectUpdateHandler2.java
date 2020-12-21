@@ -325,12 +325,7 @@ public class DirectUpdateHandler2 extends UpdateHandler implements SolrCoreState
     RefCounted<IndexWriter> iw = solrCoreState.getIndexWriter(core);
     try {
       IndexWriter writer = iw.get();
-      Iterable<Document> nestedDocs = cmd.getLuceneDocsIfNested();
-      if (nestedDocs != null) {
-        writer.addDocuments(nestedDocs);
-      } else {
-        writer.addDocument(cmd.getLuceneDocument());
-      }
+      writer.addDocuments(cmd.getLuceneDocs());
       if (ulog != null) ulog.add(cmd);
 
     } finally {
@@ -431,7 +426,7 @@ public class DirectUpdateHandler2 extends UpdateHandler implements SolrCoreState
       return;
     }
 
-    Term deleteTerm = getIdTerm(cmd.getIndexedId(), false);
+    Term deleteTerm = getIdTerm(cmd.getIndexedId());
     // SolrCore.verbose("deleteDocuments",deleteTerm,writer);
     RefCounted<IndexWriter> iw = solrCoreState.getIndexWriter(core);
     try {
@@ -970,18 +965,12 @@ public class DirectUpdateHandler2 extends UpdateHandler implements SolrCoreState
 
     } else { // more normal path
 
-      Iterable<Document> nestedDocs = cmd.getLuceneDocsIfNested();
-      boolean isNested = nestedDocs != null; // AKA nested child docs
-      Term idTerm = getIdTerm(isNested? new BytesRef(cmd.getRootIdUsingRouteParam()): cmd.getIndexedId(), isNested);
+      Iterable<Document> nestedDocs = cmd.getLuceneDocs();
+      Term idTerm = getIdTerm(cmd.getIndexedId());
       Term updateTerm = hasUpdateTerm ? cmd.updateTerm : idTerm;
-      if (isNested) {
-        log.debug("updateDocuments({})", cmd);
-        writer.updateDocuments(updateTerm, nestedDocs);
-      } else {
-        Document luceneDocument = cmd.getLuceneDocument();
-        log.debug("updateDocument({})", cmd);
-        writer.updateDocument(updateTerm, luceneDocument);
-      }
+
+      log.debug("updateDocuments({})", cmd);
+      writer.updateDocuments(updateTerm, nestedDocs);
 
       // If hasUpdateTerm, then delete any existing documents with the same ID other than the one added above
       //   (used in near-duplicate replacement)
@@ -994,8 +983,8 @@ public class DirectUpdateHandler2 extends UpdateHandler implements SolrCoreState
     }
   }
 
-  private Term getIdTerm(BytesRef termVal, boolean isNested) {
-    boolean useRootId = isNested || core.getLatestSchema().isUsableForChildDocs();
+  private Term getIdTerm(BytesRef termVal) {
+    boolean useRootId = core.getLatestSchema().isUsableForChildDocs();
     return new Term(useRootId ? IndexSchema.ROOT_FIELD_NAME : idField.getName(), termVal);
   }
 

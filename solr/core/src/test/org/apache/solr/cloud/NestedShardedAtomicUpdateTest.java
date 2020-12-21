@@ -18,51 +18,61 @@
 package org.apache.solr.cloud;
 
 import java.io.IOException;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.lucene.util.IOUtils;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrServerException;
+import org.apache.solr.client.solrj.impl.CloudSolrClient;
+import org.apache.solr.client.solrj.request.CollectionAdminRequest;
+import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.SolrInputDocument;
+import org.apache.solr.common.cloud.ClusterState;
+import org.apache.solr.common.cloud.Replica;
+import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.common.params.SolrParams;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
-public class NestedShardedAtomicUpdateTest extends AbstractFullDistribZkTestBase {
+public class NestedShardedAtomicUpdateTest extends SolrCloudTestCase { // used to extend AbstractFullDistribZkTestBase
+  private static final String DEFAULT_COLLECTION = "col1";
+  private static CloudSolrClient cloudClient;
+  private static List<SolrClient> clients; // not CloudSolrClient
 
-  public NestedShardedAtomicUpdateTest() {
-    stress = 0;
-    sliceCount = 4;
-    schemaString = "schema-nest.xml";
-  }
+  @BeforeClass
+  public static void beforeClass() throws Exception {
+    configureCluster(1)
+        .addConfig("_default", configset("cloud-minimal"))
+        .configure();
+    // replace schema.xml with schema-test.xml
+    Path schemaPath = Path.of(TEST_HOME()).resolve("collection1").resolve("conf").resolve("schema-nest.xml");
+    cluster.getZkClient().setData("/configs/_default/schema.xml", schemaPath.toFile(),true);
 
-  @Override
-  protected String getCloudSolrConfig() {
-    return "solrconfig-tlog.xml";
-  }
+    cloudClient = cluster.getSolrClient();
+    cloudClient.setDefaultCollection(DEFAULT_COLLECTION);
 
-  @Override
-  protected String getCloudSchemaFile() {
-    return "schema-nest.xml";
-  }
+    CollectionAdminRequest.createCollection(DEFAULT_COLLECTION, 4, 1)
+        .process(cloudClient);
 
-  @Test
-  @ShardsFixed(num = 4)
-  public void test() throws Exception {
-    boolean testFinished = false;
-    try {
-      sendWrongRouteParam();
-      doNestedInplaceUpdateTest();
-      doRootShardRoutingTest();
-      testFinished = true;
-    } finally {
-      if (!testFinished) {
-        printLayoutOnTearDown = true;
-      }
+    clients = new ArrayList<>();
+    ClusterState clusterState = cloudClient.getClusterStateProvider().getClusterState();
+    for (Replica replica : clusterState.getCollection(DEFAULT_COLLECTION).getReplicas()) {
+      clients.add(getHttpSolrClient(replica.getCoreUrl()));
     }
   }
 
+  @AfterClass
+  public static void afterClass() throws Exception {
+    IOUtils.close(clients);
+  }
+
+  @Test
   public void doRootShardRoutingTest() throws Exception {
     assertEquals(4, cloudClient.getZkStateReader().getClusterState().getCollection(DEFAULT_COLLECTION).getSlices().size());
     final String[] ids = {"3", "4", "5", "6"};
@@ -117,11 +127,12 @@ public class NestedShardedAtomicUpdateTest extends AbstractFullDistribZkTestBase
       List<SolrDocument> grandChildren = (List) childDoc.getFieldValues("grandChildren");
       assertEquals(idIndex + 1, grandChildren.size());
       SolrDocument grandChild = grandChildren.get(0);
-      assertEquals(idIndex + 1, grandChild.getFirstValue("inplace_updatable_int"));
       assertEquals("3", grandChild.getFieldValue("id"));
+      assertEquals(idIndex + 1, grandChild.getFirstValue("inplace_updatable_int"));
     }
   }
 
+  @Test
   public void doNestedInplaceUpdateTest() throws Exception {
     assertEquals(4, cloudClient.getZkStateReader().getClusterState().getCollection(DEFAULT_COLLECTION).getSlices().size());
     final String[] ids = {"3", "4", "5", "6"};
@@ -180,6 +191,7 @@ public class NestedShardedAtomicUpdateTest extends AbstractFullDistribZkTestBase
     }
   }
 
+  @Test
   public void sendWrongRouteParam() throws Exception {
     assertEquals(4, cloudClient.getZkStateReader().getClusterState().getCollection(DEFAULT_COLLECTION).getSlices().size());
     final String rootId = "1";
@@ -192,11 +204,11 @@ public class NestedShardedAtomicUpdateTest extends AbstractFullDistribZkTestBase
     int which = (rootId.hashCode() & 0x7fffffff) % clients.size();
     SolrClient aClient = clients.get(which);
 
-    indexDocAndRandomlyCommit(aClient, params("wt", "json", "_route_", rootId), doc, false);
+    indexDocAndRandomlyCommit(aClient, params("wt", "json", "_route_", rootId), doc);
 
     final SolrInputDocument childDoc = sdoc("id", rootId, "children", map("add", sdocs(sdoc("id", "2", "level_s", "child"))));
 
-    indexDocAndRandomlyCommit(aClient, rightParams, childDoc, false);
+    indexDocAndRandomlyCommit(aClient, rightParams, childDoc);
 
     final SolrInputDocument grandChildDoc = sdoc("id", "2", "grandChildren",
         map("add", sdocs(
@@ -215,23 +227,24 @@ public class NestedShardedAtomicUpdateTest extends AbstractFullDistribZkTestBase
   }
 
   private void indexDocAndRandomlyCommit(SolrClient client, SolrParams params, SolrInputDocument sdoc) throws IOException, SolrServerException {
-    indexDocAndRandomlyCommit(client, params, sdoc, true);
-  }
-
-  private void indexDocAndRandomlyCommit(SolrClient client, SolrParams params, SolrInputDocument sdoc, boolean compareToControlCollection) throws IOException, SolrServerException {
-    if (compareToControlCollection) {
-      indexDoc(client, params, sdoc);
-    } else {
-      add(client, params, sdoc);
-    }
+    indexDoc(client, params, sdoc);
     // randomly commit docs
     if (random().nextBoolean()) {
       client.commit();
     }
   }
 
+  private void indexDoc(SolrClient client, SolrParams params, SolrInputDocument sdoc) throws IOException, SolrServerException {
+    final UpdateRequest updateRequest = new UpdateRequest();
+    updateRequest.add(sdoc);
+    updateRequest.setParams(new ModifiableSolrParams(params));
+    updateRequest.process(client, null);
+  }
+
   private SolrClient getRandomSolrClient() {
-    return clients.get(random().nextInt(clients.size()));
+    // randomly return one of these clients, to include the cloudClient
+    final int index = random().nextInt(clients.size() + 1);
+    return index == clients.size() ? cloudClient : clients.get(index);
   }
 
 }

@@ -359,7 +359,7 @@ public class NestedAtomicUpdateTest extends SolrTestCaseJ4 {
     //add greatGrandChild
     doc = sdoc("id", "4",
         "child4", Collections.singletonMap("add", sdoc("id", "5", "cat_ss", "greatGrandChild")));
-    addAndGetVersion(doc, params("wt", "json"));
+    addAndGetVersion(doc, params("wt", "json")); // no _route_ works; although won't in SolrCloud
 
     assertJQ(req("qt","/get", "id","1", "fl","id, cat_ss, child1, child2, child3, child4, [child]")
         ,"=={'doc':{'id':'1'" +

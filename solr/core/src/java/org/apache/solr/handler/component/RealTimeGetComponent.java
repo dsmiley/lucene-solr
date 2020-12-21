@@ -240,11 +240,16 @@ public class RealTimeGetComponent extends SearchComponent
 
    try {
 
-
+     boolean opennedRealtimeSearcher = false;
      BytesRefBuilder idBytes = new BytesRefBuilder();
      for (String idStr : reqIds.allIds) {
        fieldType.readableToIndexed(idStr, idBytes);
-       if (ulog != null) {
+       if (!opennedRealtimeSearcher && !params.get(ShardParams._ROUTE_, idStr).equals(idStr)) { // idStr is a child doc
+         searcherInfo.clear();
+         resultContext = null;
+         ulog.openRealtimeSearcher();  // force open a new realtime searcher
+         opennedRealtimeSearcher = true;
+       } else if (ulog != null) {
          Object o = ulog.lookup(idBytes.get());
          if (o != null) {
            // should currently be a List<Oper,Ver,Doc/Id>
@@ -258,9 +263,12 @@ public class RealTimeGetComponent extends SearchComponent
 
                if (mustUseRealtimeSearcher) {
                  // close handles to current searchers & result context
-                 searcherInfo.clear();
-                 resultContext = null;
-                 ulog.openRealtimeSearcher();  // force open a new realtime searcher
+                 if (!opennedRealtimeSearcher) {
+                   searcherInfo.clear();
+                   resultContext = null;
+                   ulog.openRealtimeSearcher();  // force open a new realtime searcher
+                   opennedRealtimeSearcher = true;
+                 }
                  o = null;  // pretend we never found this record and fall through to use the searcher
                  break;
                }
@@ -331,7 +339,7 @@ public class RealTimeGetComponent extends SearchComponent
          if (null == resultContext) {
            // either first pass, or we've re-opened searcher - either way now we setContext
            resultContext = new RTGResultContext(rsp.getReturnFields(), searcherInfo.getSearcher(), req);
-           transformer.setContext(resultContext);
+           transformer.setContext(resultContext); // we avoid calling setContext unless searcher is new/changed
          }
          transformer.transform(doc, docid);
        }
@@ -617,7 +625,7 @@ public class RealTimeGetComponent extends SearchComponent
   public static SolrInputDocument getInputDocument(SolrCore core, BytesRef idBytes, Resolution lookupStrategy) throws IOException {
     return getInputDocument (core, idBytes, null, null, lookupStrategy);
   }
-  
+
   /**
    * Obtains the latest document for a given id from the tlog or through the realtime searcher (if not found in the tlog). 
    * @param versionReturned If a non-null AtomicLong is passed in, it is set to the version of the update returned from the TLog.
@@ -659,30 +667,30 @@ public class RealTimeGetComponent extends SearchComponent
           Document luceneDocument = docFetcher.doc(docid);
           sid = toSolrInputDocument(luceneDocument, schema);
         }
-        final boolean isNestedRequest = resolveStrategy == Resolution.DOC_WITH_CHILDREN || resolveStrategy == Resolution.ROOT_WITH_CHILDREN;
+        final boolean isNestedRequest = resolveStrategy == Resolution.ROOT_WITH_CHILDREN;
         decorateDocValueFields(docFetcher, sid, docid, onlyTheseNonStoredDVs, isNestedRequest || schema.hasExplicitField(IndexSchema.NEST_PATH_FIELD_NAME));
         SolrInputField rootField = sid.getField(IndexSchema.ROOT_FIELD_NAME);
-        if((isNestedRequest) && schema.isUsableForChildDocs() && schema.hasExplicitField(IndexSchema.NEST_PATH_FIELD_NAME) && rootField!=null) {
+        if (isNestedRequest && schema.isUsableForChildDocs() && schema.hasExplicitField(IndexSchema.NEST_PATH_FIELD_NAME) && rootField!=null) {
           // doc is part of a nested structure
-          final boolean resolveRootDoc = resolveStrategy == Resolution.ROOT_WITH_CHILDREN;
-          String id = resolveRootDoc? (String) rootField.getFirstValue(): (String) sid.getField(idField.getName()).getFirstValue();
+          String rootIdString = (String) rootField.getFirstValue();
           ModifiableSolrParams params = new ModifiableSolrParams()
               .set("fl", "*, _nest_path_, [child]")
               .set("limit", "-1");
           SolrQueryRequest nestedReq = new LocalSolrQueryRequest(core, params);
-          final BytesRef rootIdBytes = new BytesRef(id);
+          final BytesRef rootIdBytes = new BytesRef(rootIdString);
           final int rootDocId = searcher.getFirstMatch(new Term(idField.getName(), rootIdBytes));
           final DocTransformer childDocTransformer = core.getTransformerFactory("child").create("child", params, nestedReq);
           final ResultContext resultContext = new RTGResultContext(new SolrReturnFields(nestedReq), searcher, nestedReq);
           childDocTransformer.setContext(resultContext);
           final SolrDocument nestedDoc;
-          if(resolveRootDoc && rootIdBytes.equals(idBytes)) {
+          if (rootIdBytes.equals(idBytes)) {
             nestedDoc = toSolrDoc(sid, schema);
           } else {
             nestedDoc = toSolrDoc(docFetcher.doc(rootDocId), schema);
             decorateDocValueFields(docFetcher, nestedDoc, rootDocId, onlyTheseNonStoredDVs, true);
           }
           childDocTransformer.transform(nestedDoc, rootDocId);
+          nestedReq.close();
           sid = toSolrInputDocument(nestedDoc, schema);
         }
       }
@@ -1260,26 +1268,16 @@ public class RealTimeGetComponent extends SearchComponent
   }
 
   /**
-   *  <p>
-   *    Lookup strategy for {@link #getInputDocument(SolrCore, BytesRef, AtomicLong, Set, Resolution)}.
-   *  </p>
-   *  <ul>
-   *    <li>{@link #DOC}</li>
-   *    <li>{@link #DOC_WITH_CHILDREN}</li>
-   *    <li>{@link #ROOT_WITH_CHILDREN}</li>
-   *  </ul>
+   * Lookup strategy for {@link #getInputDocument(SolrCore, BytesRef, AtomicLong, Set, Resolution)}.
    */
   public static enum Resolution {
     /**
      * Resolve this partial document to a full document (by following back prevPointer/prevVersion)?
      */
     DOC,
+
     /**
-     * Check whether the document has child documents. If so, return the document including its children.
-     */
-    DOC_WITH_CHILDREN,
-    /**
-     * Check whether the document is part of a nested hierarchy. If so, return the whole hierarchy(look up root doc).
+     * Check whether the document is part of a nested hierarchy. If so, return the whole hierarchy (look up root doc).
      */
     ROOT_WITH_CHILDREN
   }

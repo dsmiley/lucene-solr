@@ -682,6 +682,7 @@ public class UpdateLog implements PluginInfoInitialized, SolrMetricProducer {
    * This may also be called when we updates are being buffered (from PeerSync/IndexFingerprint)
    */
   public void openRealtimeSearcher() {
+    log.debug("openRealtimeSearcher");
     synchronized (this) {
       // We must cause a new IndexReader to be opened before anything looks at these caches again
       // so that a cache miss will read fresh data.
